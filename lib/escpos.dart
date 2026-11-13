@@ -4,8 +4,12 @@
 library;
 
 import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:image/image.dart' as img;
 
 import 'models.dart';
+import 'product_store.dart' show appFile;
 import 'receipt.dart' show formatDateTime, lineDetail;
 import 'settings.dart';
 
@@ -74,6 +78,39 @@ class EscPosBuilder {
     }
   }
 
+  /// Prints [src] as an 8-dot double-density bit image (ESC *), which
+  /// 9-pin impact printers like the TM-U220 support. Double density has
+  /// twice the horizontal resolution, so the image is squashed vertically
+  /// by half to keep its proportions.
+  void image(img.Image src, {int maxDots = 360}) {
+    final w = (src.width * 2).clamp(8, maxDots);
+    final rows = (src.height * w / src.width / 2).round().clamp(1, 400);
+    final r = img.copyResize(src,
+        width: w, height: rows, interpolation: img.Interpolation.average);
+
+    bool dark(int x, int y) {
+      final p = r.getPixel(x, y);
+      final lum =
+          0.299 * p.rNormalized + 0.587 * p.gNormalized + 0.114 * p.bNormalized;
+      return p.aNormalized > 0.5 && lum < 0.5;
+    }
+
+    _bytes.addAll([_esc, 0x33, 16]); // line spacing = one 8-dot band
+    for (var y = 0; y < rows; y += 8) {
+      _bytes.addAll([_esc, 0x2A, 1, w & 0xFF, w >> 8]);
+      for (var x = 0; x < w; x++) {
+        var b = 0;
+        for (var bit = 0; bit < 8; bit++) {
+          final yy = y + bit;
+          if (yy < rows && dark(x, yy)) b |= 0x80 >> bit;
+        }
+        _bytes.add(b);
+      }
+      _bytes.add(0x0A);
+    }
+    _bytes.addAll([_esc, 0x32]); // default line spacing
+  }
+
   void divider() => text('-' * width);
   void feed(int lines) => _bytes.addAll([_esc, 0x64, lines]);
 
@@ -113,11 +150,16 @@ List<int> buildEscPosReceipt({
   required List<CartLine> lines,
   required int receiptNo,
   required DateTime time,
+  img.Image? logo,
 }) {
   final p = EscPosBuilder(settings.receiptWidth);
   final total = lines.fold<int>(0, (s, l) => s + l.totalCents);
 
   p.align(1);
+  if (logo != null) {
+    p.image(logo);
+    p.feed(1);
+  }
   p.bold(true);
   p.doubleHeight(true);
   p.text(settings.shopName);
@@ -160,9 +202,10 @@ List<int> buildEscPosReceipt({
   return p.bytes;
 }
 
-List<int> buildEscPosTest(Settings settings) {
+List<int> buildEscPosTest(Settings settings, {img.Image? logo}) {
   final p = EscPosBuilder(settings.receiptWidth);
   p.align(1);
+  if (logo != null) p.image(logo);
   p.bold(true);
   p.text('TESTBON');
   p.bold(false);
@@ -186,4 +229,26 @@ Future<void> sendToNetworkPrinter(String ip, List<int> bytes) async {
   } finally {
     await socket.close();
   }
+}
+
+/// The receipt logo, stored as logo.png in the app folder.
+Future<img.Image?> loadLogo() async {
+  final f = await appFile('logo.png');
+  if (!await f.exists()) return null;
+  return img.decodeImage(await f.readAsBytes());
+}
+
+/// Saves a chosen image as the receipt logo. Returns false if the file
+/// is not a readable image.
+Future<bool> saveLogo(Uint8List bytes) async {
+  final decoded = img.decodeImage(bytes);
+  if (decoded == null) return false;
+  final f = await appFile('logo.png');
+  await f.writeAsBytes(img.encodePng(decoded));
+  return true;
+}
+
+Future<void> removeLogo() async {
+  final f = await appFile('logo.png');
+  if (await f.exists()) await f.delete();
 }

@@ -217,7 +217,11 @@ class _PosScreenState extends State<PosScreen> {
           await sendToNetworkPrinter(
             settings.printerIp,
             buildEscPosReceipt(
-                settings: settings, lines: lines, receiptNo: no, time: now),
+                settings: settings,
+                lines: lines,
+                receiptNo: no,
+                time: now,
+                logo: await loadLogo()),
           );
         } else {
           final pdf = await buildReceipt(
@@ -288,6 +292,8 @@ class _PosScreenState extends State<PosScreen> {
     final width =
         TextEditingController(text: settings.receiptWidth.toString());
     String testStatus = '';
+    var hasLogo = await loadLogo() != null;
+    if (!mounted) return;
     String? printerUrl = settings.printerUrl;
     String? printerName = settings.printerName;
 
@@ -344,8 +350,8 @@ class _PosScreenState extends State<PosScreen> {
                     );
                     setD(() => testStatus = 'Bezig...');
                     try {
-                      await sendToNetworkPrinter(
-                          ip.text, buildEscPosTest(t));
+                      await sendToNetworkPrinter(ip.text,
+                          buildEscPosTest(t, logo: await loadLogo()));
                       setD(() => testStatus = 'Testbon verstuurd');
                     } catch (e) {
                       setD(() => testStatus = 'Mislukt: $e');
@@ -355,6 +361,43 @@ class _PosScreenState extends State<PosScreen> {
                 ),
                 const SizedBox(width: 12),
                 Expanded(child: Text(testStatus)),
+              ]),
+              const SizedBox(height: 8),
+              Row(children: [
+                Expanded(
+                    child: Text(hasLogo
+                        ? 'Logo op de bon: ingesteld'
+                        : 'Logo op de bon: geen')),
+                TextButton(
+                  onPressed: () async {
+                    final picked = await FilePicker.platform.pickFiles(
+                      dialogTitle: 'Kies logo (PNG of JPG)',
+                      type: FileType.image,
+                      withData: true,
+                    );
+                    if (picked == null) return;
+                    final f = picked.files.single;
+                    final bytes =
+                        f.bytes ?? await File(f.path!).readAsBytes();
+                    final ok = await saveLogo(bytes);
+                    setD(() {
+                      hasLogo = ok || hasLogo;
+                      testStatus = ok
+                          ? 'Logo opgeslagen, maak een testbon'
+                          : 'Dit bestand kan niet als logo gebruikt worden';
+                    });
+                  },
+                  child: const Text('Kies logo'),
+                ),
+                if (hasLogo)
+                  IconButton(
+                    tooltip: 'Logo verwijderen',
+                    icon: const Icon(Icons.clear),
+                    onPressed: () async {
+                      await removeLogo();
+                      setD(() => hasLogo = false);
+                    },
+                  ),
               ]),
               const SizedBox(height: 16),
               Row(children: [
