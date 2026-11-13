@@ -3,6 +3,8 @@ library;
 
 import 'dart:convert';
 
+import 'package:flutter/services.dart' show rootBundle;
+
 import 'models.dart';
 import 'storage.dart';
 
@@ -52,8 +54,16 @@ class ProductStore {
   }
 
   Future<void> load() async {
-    final text = await readText('products.json');
-    if (text == null) return;
+    // A list imported on this device wins; otherwise use the PLU list that
+    // ships with the app.
+    var text = await readText('products.json');
+    if (text == null) {
+      try {
+        text = await rootBundle.loadString('assets/products_default.json');
+      } catch (_) {
+        return;
+      }
+    }
     final list = jsonDecode(text) as List;
     setProducts([for (final j in list) Product.fromJson(j as Map<String, dynamic>)]);
   }
