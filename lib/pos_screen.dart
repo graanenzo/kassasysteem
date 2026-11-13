@@ -152,7 +152,8 @@ class _PosScreenState extends State<PosScreen> {
             l.grams == null &&
             l.unitPriceCents == p.priceCents);
         if (i >= 0) {
-          final line = cart.removeAt(i)..quantity++;
+          final line = cart.removeAt(i);
+          line.quantity++;
           cart.add(line);
         } else {
           cart.add(CartLine(product: p, unitPriceCents: p.priceCents));
