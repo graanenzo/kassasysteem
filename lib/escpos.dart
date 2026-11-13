@@ -159,7 +159,10 @@ List<int> buildEscPosReceipt({
   final total = lines.fold<int>(0, (s, l) => s + l.totalCents);
 
   p.align(1);
-  if (logo != null) p.image(logo);
+  if (logo != null) {
+    p.image(logo);
+    p.feed(1); // space between logo and date
+  }
   if (settings.address.trim().isNotEmpty) p.text(settings.address.trim());
   p.text(formatDateTime(time));
   p.align(0);
