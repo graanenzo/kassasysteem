@@ -27,11 +27,11 @@ void main() {
     img.fill(logo, color: img.ColorRgb8(0, 0, 0));
     final b = EscPosBuilder(33)..image(logo);
     final bytes = b.bytes;
-    // 200 dots wide, 50 rows -> 7 bands of ESC * 1
+    // capped at 180 dots wide, 45 rows -> 6 bands of ESC * 1
     var bands = 0;
     for (var i = 0; i + 2 < bytes.length; i++) {
       if (bytes[i] == 0x1B && bytes[i + 1] == 0x2A && bytes[i + 2] == 1) bands++;
     }
-    expect(bands, 7);
+    expect(bands, 6);
   });
 }

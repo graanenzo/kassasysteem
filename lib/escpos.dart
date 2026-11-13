@@ -83,7 +83,7 @@ class EscPosBuilder {
   /// 9-pin impact printers like the TM-U220 support. Double density has
   /// twice the horizontal resolution, so the image is squashed vertically
   /// by half to keep its proportions.
-  void image(img.Image src, {int maxDots = 360}) {
+  void image(img.Image src, {int maxDots = 180}) {
     final w = (src.width * 2).clamp(8, maxDots);
     final rows = (src.height * w / src.width / 2).round().clamp(1, 400);
     final r = img.copyResize(src,
@@ -159,19 +159,10 @@ List<int> buildEscPosReceipt({
   final total = lines.fold<int>(0, (s, l) => s + l.totalCents);
 
   p.align(1);
-  if (logo != null) {
-    p.image(logo);
-    p.feed(1);
-  }
-  p.bold(true);
-  p.doubleHeight(true);
-  p.text(settings.shopName);
-  p.doubleHeight(false);
-  p.bold(false);
+  if (logo != null) p.image(logo);
   if (settings.address.trim().isNotEmpty) p.text(settings.address.trim());
+  p.text(formatDateTime(time));
   p.align(0);
-  p.feed(1);
-  p.row('Bon $receiptNo', formatDateTime(time));
   p.divider();
   for (final l in lines) {
     p.text(l.product.displayName);
@@ -200,8 +191,7 @@ List<int> buildEscPosReceipt({
     p.text(settings.footer.trim());
     p.align(0);
   }
-  p.feed(2);
-  p.cut();
+  p.cut(); // GS V 66 already feeds the last line past the cutter
   return p.bytes;
 }
 
@@ -212,12 +202,10 @@ List<int> buildEscPosTest(Settings settings, {img.Image? logo}) {
   p.bold(true);
   p.text('TESTBON');
   p.bold(false);
-  p.text(settings.shopName);
   p.align(0);
   p.text('1234567890' * 10);
   p.text('^ ${settings.receiptWidth} tekens per regel ingesteld');
   p.row('Links', 'rechts');
-  p.feed(2);
   p.cut();
   return p.bytes;
 }
