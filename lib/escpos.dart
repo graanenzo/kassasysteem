@@ -6,6 +6,7 @@ library;
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:image/image.dart' as img;
 
 import 'models.dart';
@@ -92,7 +93,9 @@ class EscPosBuilder {
       final p = r.getPixel(x, y);
       final lum =
           0.299 * p.rNormalized + 0.587 * p.gNormalized + 0.114 * p.bNormalized;
-      return p.aNormalized > 0.5 && lum < 0.5;
+      // Anything clearly darker than white prints, so coloured parts of a
+      // logo (like a yellow '&') are not lost.
+      return p.aNormalized > 0.5 && lum < 0.8;
     }
 
     _bytes.addAll([_esc, 0x33, 16]); // line spacing = one 8-dot band
@@ -231,11 +234,17 @@ Future<void> sendToNetworkPrinter(String ip, List<int> bytes) async {
   }
 }
 
-/// The receipt logo, stored as logo.png in the app folder.
+/// The receipt logo: a logo chosen in the settings (logo.png in the app
+/// folder), otherwise the built-in Graan & Zo logo.
 Future<img.Image?> loadLogo() async {
   final f = await appFile('logo.png');
-  if (!await f.exists()) return null;
-  return img.decodeImage(await f.readAsBytes());
+  if (await f.exists()) return img.decodeImage(await f.readAsBytes());
+  try {
+    final data = await rootBundle.load('assets/logo.png');
+    return img.decodeImage(data.buffer.asUint8List());
+  } catch (_) {
+    return null;
+  }
 }
 
 /// Saves a chosen image as the receipt logo. Returns false if the file

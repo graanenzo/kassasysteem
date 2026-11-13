@@ -292,7 +292,7 @@ class _PosScreenState extends State<PosScreen> {
     final width =
         TextEditingController(text: settings.receiptWidth.toString());
     String testStatus = '';
-    var hasLogo = await loadLogo() != null;
+    var hasLogo = await (await appFile('logo.png')).exists();
     if (!mounted) return;
     String? printerUrl = settings.printerUrl;
     String? printerName = settings.printerName;
@@ -367,7 +367,7 @@ class _PosScreenState extends State<PosScreen> {
                 Expanded(
                     child: Text(hasLogo
                         ? 'Logo op de bon: ingesteld'
-                        : 'Logo op de bon: geen')),
+                        : 'Logo op de bon: standaard')),
                 TextButton(
                   onPressed: () async {
                     final picked = await FilePicker.platform.pickFiles(
