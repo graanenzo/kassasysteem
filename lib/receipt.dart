@@ -28,15 +28,12 @@ Future<Uint8List> buildReceipt({
   required List<CartLine> lines,
   required int receiptNo,
   required DateTime time,
-  required String method,
-  int? cashGivenCents,
 }) async {
   // Courier is built in (no internet needed). Built-in PDF fonts cannot
   // print the euro sign, so amounts are shown in EUR without symbol.
   final font = pw.Font.courier();
   final bold = pw.Font.courierBold();
   final s = pw.TextStyle(font: font, fontSize: 9);
-  final b = pw.TextStyle(font: bold, fontSize: 9);
   final big = pw.TextStyle(font: bold, fontSize: 12);
 
   final total = lines.fold<int>(0, (sum, l) => sum + l.totalCents);
@@ -81,12 +78,6 @@ Future<Uint8List> buildReceipt({
         ],
         divider(),
         row('TOTAAL EUR', money(total), big),
-        pw.SizedBox(height: 3),
-        if (method == 'contant' && cashGivenCents != null) ...[
-          row('Contant', money(cashGivenCents)),
-          row('Wisselgeld', money(cashGivenCents - total), b),
-        ] else
-          row('Betaald met pin', money(total)),
         divider(),
         for (final e in byRate.entries)
           row('Waarvan btw ${e.key}%',

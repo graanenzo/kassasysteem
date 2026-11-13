@@ -196,82 +196,8 @@ class _PosScreenState extends State<PosScreen> {
 
   // ---------------------------------------------------------------- checkout
 
-  Future<void> _payPin() async {
+  Future<void> _checkout({required bool printBon}) async {
     if (cart.isEmpty) return;
-    await _checkout('pin');
-  }
-
-  Future<void> _payCash() async {
-    if (cart.isEmpty) return;
-    final c = TextEditingController();
-    final due = total;
-    final given = await showDialog<int>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(builder: (ctx, setD) {
-        final g = parseEuro(c.text);
-        return AlertDialog(
-          title: Text('Contant: ${euro(due)}'),
-          content: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextField(
-              controller: c,
-              autofocus: true,
-              decoration: const InputDecoration(
-                  labelText: 'Ontvangen', prefixText: '€ '),
-              onChanged: (_) => setD(() {}),
-              onSubmitted: (v) {
-                final x = parseEuro(v) ?? due;
-                if (x >= due) Navigator.pop(ctx, x);
-              },
-            ),
-            const SizedBox(height: 12),
-            Wrap(spacing: 8, children: [
-              for (final note in [due, 1000, 2000, 5000, 10000])
-                if (note >= due)
-                  OutlinedButton(
-                    onPressed: () => Navigator.pop(ctx, note),
-                    child: Text(note == due ? 'Gepast' : euro(note)),
-                  ),
-            ]),
-            if (g != null && g >= due) ...[
-              const SizedBox(height: 12),
-              Text('Wisselgeld: ${euro(g - due)}',
-                  style: Theme.of(ctx).textTheme.titleLarge),
-            ],
-          ]),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Annuleren')),
-            FilledButton(
-              onPressed: (g == null || g < due)
-                  ? null
-                  : () => Navigator.pop(ctx, g),
-              child: const Text('Afrekenen'),
-            ),
-          ],
-        );
-      }),
-    );
-    if (given == null) return;
-    await _checkout('contant', cashGivenCents: given);
-    if (!mounted || given == due) return;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Wisselgeld'),
-        content: Text(euro(given - due),
-            style: Theme.of(ctx).textTheme.displaySmall),
-        actions: [
-          FilledButton(
-              autofocus: true,
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('OK')),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _checkout(String method, {int? cashGivenCents}) async {
     final lines = List<CartLine>.of(cart);
     final sum = total;
     final now = DateTime.now();
@@ -279,25 +205,25 @@ class _PosScreenState extends State<PosScreen> {
     settings.nextReceiptNo++;
     await settings.save();
     await SalesLog.append(
-        receiptNo: no, time: now, method: method, lines: lines);
+        receiptNo: no, time: now, method: printBon ? 'bon' : 'geen bon', lines: lines);
     setState(() {
       cart.clear();
       todayTotal += sum;
     });
-    try {
-      final pdf = await buildReceipt(
-        settings: settings,
-        lines: lines,
-        receiptNo: no,
-        time: now,
-        method: method,
-        cashGivenCents: cashGivenCents,
-      );
-      await printReceipt(pdf, settings);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Bon printen mislukt: $e')));
+    if (printBon) {
+      try {
+        final pdf = await buildReceipt(
+          settings: settings,
+          lines: lines,
+          receiptNo: no,
+          time: now,
+        );
+        await printReceipt(pdf, settings);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Bon printen mislukt: $e')));
+        }
       }
     }
     inputFocus.requestFocus();
@@ -565,18 +491,18 @@ class _PosScreenState extends State<PosScreen> {
         SizedBox(
           height: 64,
           child: FilledButton.icon(
-            onPressed: cart.isEmpty ? null : _payPin,
-            icon: const Icon(Icons.credit_card),
-            label: const Text('Pin', style: TextStyle(fontSize: 20)),
+            onPressed: cart.isEmpty ? null : () => _checkout(printBon: true),
+            icon: const Icon(Icons.receipt_long),
+            label: const Text('Bon', style: TextStyle(fontSize: 20)),
           ),
         ),
         const SizedBox(height: 8),
         SizedBox(
           height: 64,
           child: FilledButton.tonalIcon(
-            onPressed: cart.isEmpty ? null : _payCash,
-            icon: const Icon(Icons.payments),
-            label: const Text('Contant', style: TextStyle(fontSize: 20)),
+            onPressed: cart.isEmpty ? null : () => _checkout(printBon: false),
+            icon: const Icon(Icons.check),
+            label: const Text('Geen bon', style: TextStyle(fontSize: 20)),
           ),
         ),
         const SizedBox(height: 8),
