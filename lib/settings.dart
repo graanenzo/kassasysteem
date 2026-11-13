@@ -13,6 +13,13 @@ class Settings {
   String footer;
   String? printerUrl;
   String? printerName;
+
+  /// IP address of an Epson network receipt printer (ESC/POS). When set,
+  /// receipts go straight to this printer instead of via Windows printing.
+  String printerIp;
+
+  /// Characters per line on the receipt printer.
+  int receiptWidth;
   int nextReceiptNo;
 
   Settings({
@@ -21,6 +28,8 @@ class Settings {
     this.footer = 'Bedankt voor uw bezoek!',
     this.printerUrl,
     this.printerName,
+    this.printerIp = '',
+    this.receiptWidth = 33,
     this.nextReceiptNo = 1,
   });
 
@@ -30,6 +39,8 @@ class Settings {
         'footer': footer,
         'printerUrl': printerUrl,
         'printerName': printerName,
+        'printerIp': printerIp,
+        'receiptWidth': receiptWidth,
         'nextReceiptNo': nextReceiptNo,
       };
 
@@ -39,6 +50,8 @@ class Settings {
         footer: (j['footer'] ?? '') as String,
         printerUrl: j['printerUrl'] as String?,
         printerName: j['printerName'] as String?,
+        printerIp: (j['printerIp'] ?? '') as String,
+        receiptWidth: (j['receiptWidth'] ?? 33) as int,
         nextReceiptNo: (j['nextReceiptNo'] ?? 1) as int,
       );
 

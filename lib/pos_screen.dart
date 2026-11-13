@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
 
 import 'barcode_listener.dart';
+import 'escpos.dart';
 import 'models.dart';
 import 'plu_import.dart';
 import 'product_store.dart';
@@ -212,17 +213,23 @@ class _PosScreenState extends State<PosScreen> {
     });
     if (printBon) {
       try {
-        final pdf = await buildReceipt(
-          settings: settings,
-          lines: lines,
-          receiptNo: no,
-          time: now,
-        );
-        await printReceipt(pdf, settings);
+        if (settings.printerIp.trim().isNotEmpty) {
+          await sendToNetworkPrinter(
+            settings.printerIp,
+            buildEscPosReceipt(
+                settings: settings, lines: lines, receiptNo: no, time: now),
+          );
+        } else {
+          final pdf = await buildReceipt(
+              settings: settings, lines: lines, receiptNo: no, time: now);
+          await printReceipt(pdf, settings);
+        }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Bon printen mislukt: $e')));
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Bon printen mislukt: $e'),
+            backgroundColor: Colors.red.shade700,
+          ));
         }
       }
     }
@@ -277,6 +284,10 @@ class _PosScreenState extends State<PosScreen> {
     final name = TextEditingController(text: settings.shopName);
     final addr = TextEditingController(text: settings.address);
     final foot = TextEditingController(text: settings.footer);
+    final ip = TextEditingController(text: settings.printerIp);
+    final width =
+        TextEditingController(text: settings.receiptWidth.toString());
+    String testStatus = '';
     String? printerUrl = settings.printerUrl;
     String? printerName = settings.printerName;
 
@@ -284,6 +295,7 @@ class _PosScreenState extends State<PosScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setD) => AlertDialog(
+          scrollable: true,
           title: const Text('Instellingen'),
           content: SizedBox(
             width: 420,
@@ -303,8 +315,52 @@ class _PosScreenState extends State<PosScreen> {
               const SizedBox(height: 16),
               Row(children: [
                 Expanded(
+                  flex: 3,
+                  child: TextField(
+                    controller: ip,
+                    decoration: const InputDecoration(
+                        labelText: 'IP-adres bonprinter (Epson netwerk)',
+                        hintText: 'bijv. 192.168.1.50'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: width,
+                    keyboardType: TextInputType.number,
+                    decoration:
+                        const InputDecoration(labelText: 'Tekens/regel'),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 8),
+              Row(children: [
+                OutlinedButton(
+                  onPressed: () async {
+                    final t = Settings(
+                      shopName: name.text.trim(),
+                      receiptWidth:
+                          int.tryParse(width.text.trim()) ?? 33,
+                    );
+                    setD(() => testStatus = 'Bezig...');
+                    try {
+                      await sendToNetworkPrinter(
+                          ip.text, buildEscPosTest(t));
+                      setD(() => testStatus = 'Testbon verstuurd');
+                    } catch (e) {
+                      setD(() => testStatus = 'Mislukt: $e');
+                    }
+                  },
+                  child: const Text('Testbon'),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Text(testStatus)),
+              ]),
+              const SizedBox(height: 16),
+              Row(children: [
+                Expanded(
                     child: Text(
-                        'Bonprinter: ${printerName ?? 'kies bij elke bon'}')),
+                        'Of Windows-printer: ${printerName ?? 'geen'}')),
                 TextButton(
                   onPressed: () async {
                     final p = await Printing.pickPrinter(context: ctx);
@@ -346,7 +402,9 @@ class _PosScreenState extends State<PosScreen> {
       ..address = addr.text
       ..footer = foot.text
       ..printerUrl = printerUrl
-      ..printerName = printerName;
+      ..printerName = printerName
+      ..printerIp = ip.text.trim()
+      ..receiptWidth = int.tryParse(width.text.trim()) ?? 33;
     await settings.save();
     inputFocus.requestFocus();
   }
