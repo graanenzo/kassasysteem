@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
@@ -12,6 +11,7 @@ import 'plu_import.dart';
 import 'product_store.dart';
 import 'receipt.dart';
 import 'settings.dart';
+import 'storage.dart';
 
 class PosScreen extends StatefulWidget {
   const PosScreen({super.key});
@@ -252,7 +252,7 @@ class _PosScreenState extends State<PosScreen> {
     if (picked == null) return;
     final f = picked.files.single;
     try {
-      final bytes = f.bytes ?? await File(f.path!).readAsBytes();
+      final bytes = f.bytes ?? await readPickedPath(f.path!);
       final r = importPluFile(bytes, f.name);
       if (r.products.isEmpty) {
         throw const FormatException('geen producten gevonden');
@@ -292,7 +292,7 @@ class _PosScreenState extends State<PosScreen> {
     final width =
         TextEditingController(text: settings.receiptWidth.toString());
     String testStatus = '';
-    var hasLogo = await (await appFile('logo.png')).exists();
+    var hasLogo = await readBytes('logo.png') != null;
     if (!mounted) return;
     String? printerUrl = settings.printerUrl;
     String? printerName = settings.printerName;
@@ -378,7 +378,7 @@ class _PosScreenState extends State<PosScreen> {
                     if (picked == null) return;
                     final f = picked.files.single;
                     final bytes =
-                        f.bytes ?? await File(f.path!).readAsBytes();
+                        f.bytes ?? await readPickedPath(f.path!);
                     final ok = await saveLogo(bytes);
                     setD(() {
                       hasLogo = ok || hasLogo;
@@ -399,7 +399,8 @@ class _PosScreenState extends State<PosScreen> {
                     },
                   ),
               ]),
-              const SizedBox(height: 16),
+              if (!kIsWeb) ...[
+                const SizedBox(height: 16),
               Row(children: [
                 Expanded(
                     child: Text(
@@ -426,6 +427,7 @@ class _PosScreenState extends State<PosScreen> {
                     }),
                   ),
               ]),
+              ],
             ]),
           ),
           actions: [

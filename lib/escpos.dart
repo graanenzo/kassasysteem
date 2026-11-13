@@ -3,16 +3,17 @@
 /// works on most Epson TM printers.
 library;
 
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:image/image.dart' as img;
 
 import 'models.dart';
-import 'product_store.dart' show appFile;
+import 'storage.dart';
 import 'receipt.dart' show formatDateTime, lineDetail;
 import 'settings.dart';
+
+export 'printer_transport.dart' show sendToNetworkPrinter;
 
 const _esc = 0x1B;
 const _gs = 0x1D;
@@ -213,23 +214,11 @@ List<int> buildEscPosTest(Settings settings, {img.Image? logo}) {
   return p.bytes;
 }
 
-/// Sends raw ESC/POS bytes to the printer on TCP port 9100.
-Future<void> sendToNetworkPrinter(String ip, List<int> bytes) async {
-  final socket = await Socket.connect(ip.trim(), 9100,
-      timeout: const Duration(seconds: 5));
-  try {
-    socket.add(bytes);
-    await socket.flush();
-  } finally {
-    await socket.close();
-  }
-}
-
 /// The receipt logo: a logo chosen in the settings (logo.png in the app
 /// folder), otherwise the built-in Graan & Zo logo.
 Future<img.Image?> loadLogo() async {
-  final f = await appFile('logo.png');
-  if (await f.exists()) return img.decodeImage(await f.readAsBytes());
+  final own = await readBytes('logo.png');
+  if (own != null) return img.decodeImage(own);
   try {
     final data = await rootBundle.load('assets/logo.png');
     return img.decodeImage(data.buffer.asUint8List());
@@ -243,12 +232,10 @@ Future<img.Image?> loadLogo() async {
 Future<bool> saveLogo(Uint8List bytes) async {
   final decoded = img.decodeImage(bytes);
   if (decoded == null) return false;
-  final f = await appFile('logo.png');
-  await f.writeAsBytes(img.encodePng(decoded));
+  await writeBytes('logo.png', img.encodePng(decoded));
   return true;
 }
 
 Future<void> removeLogo() async {
-  final f = await appFile('logo.png');
-  if (await f.exists()) await f.delete();
+  await deleteStored('logo.png');
 }

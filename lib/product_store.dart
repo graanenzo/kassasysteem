@@ -2,17 +2,9 @@
 library;
 
 import 'dart:convert';
-import 'dart:io';
-
-import 'package:path_provider/path_provider.dart';
 
 import 'models.dart';
-
-Future<File> appFile(String name) async {
-  final dir = await getApplicationSupportDirectory();
-  await dir.create(recursive: true);
-  return File('${dir.path}${Platform.pathSeparator}$name');
-}
+import 'storage.dart';
 
 class ProductStore {
   List<Product> products = [];
@@ -60,15 +52,15 @@ class ProductStore {
   }
 
   Future<void> load() async {
-    final f = await appFile('products.json');
-    if (!await f.exists()) return;
-    final list = jsonDecode(await f.readAsString()) as List;
+    final text = await readText('products.json');
+    if (text == null) return;
+    final list = jsonDecode(text) as List;
     setProducts([for (final j in list) Product.fromJson(j as Map<String, dynamic>)]);
   }
 
   Future<void> save() async {
-    final f = await appFile('products.json');
-    await f.writeAsString(jsonEncode([for (final p in products) p.toJson()]));
+    await writeText(
+        'products.json', jsonEncode([for (final p in products) p.toJson()]));
   }
 }
 

@@ -2,10 +2,9 @@
 library;
 
 import 'dart:convert';
-import 'dart:io';
 
 import 'models.dart';
-import 'product_store.dart';
+import 'storage.dart';
 
 class Settings {
   String shopName;
@@ -56,15 +55,13 @@ class Settings {
       );
 
   static Future<Settings> load() async {
-    final f = await appFile('settings.json');
-    if (!await f.exists()) return Settings();
-    return Settings.fromJson(
-        jsonDecode(await f.readAsString()) as Map<String, dynamic>);
+    final text = await readText('settings.json');
+    if (text == null) return Settings();
+    return Settings.fromJson(jsonDecode(text) as Map<String, dynamic>);
   }
 
   Future<void> save() async {
-    final f = await appFile('settings.json');
-    await f.writeAsString(jsonEncode(toJson()));
+    await writeText('settings.json', jsonEncode(toJson()));
   }
 }
 
@@ -76,7 +73,6 @@ class SalesLog {
     required String method,
     required List<CartLine> lines,
   }) async {
-    final f = await appFile('sales.jsonl');
     final entry = {
       'no': receiptNo,
       'time': time.toIso8601String(),
@@ -93,15 +89,15 @@ class SalesLog {
           }
       ],
     };
-    await f.writeAsString('${jsonEncode(entry)}\n', mode: FileMode.append);
+    await appendText('sales.jsonl', '${jsonEncode(entry)}\n');
   }
 
   static Future<int> todayTotal() async {
-    final f = await appFile('sales.jsonl');
-    if (!await f.exists()) return 0;
+    final text = await readText('sales.jsonl');
+    if (text == null) return 0;
     final now = DateTime.now();
     var sum = 0;
-    for (final line in await f.readAsLines()) {
+    for (final line in const LineSplitter().convert(text)) {
       if (line.trim().isEmpty) continue;
       final j = jsonDecode(line) as Map<String, dynamic>;
       final t = DateTime.parse(j['time'] as String);
