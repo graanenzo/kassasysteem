@@ -804,6 +804,7 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Widget _sidePanel(ThemeData theme) {
+    final searching = _showKeyboard || results.isNotEmpty;
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -839,12 +840,16 @@ class _PosScreenState extends State<PosScreen> {
                     ? '${euro(p.priceCents)}/kg'
                     : euro(p.priceCents)),
                 onTap: () {
+                  setState(() => _showKeyboard = false);
                   _clearInput();
                   _addProduct(p);
                 },
               ),
           ]),
         ),
+        // While searching, the results get the space; totals and pay
+        // buttons come back once a product is picked.
+        if (!searching) ...[
         const Divider(),
         Row(children: [
           Text('Totaal', style: theme.textTheme.headlineSmall),
@@ -880,6 +885,7 @@ class _PosScreenState extends State<PosScreen> {
           onPressed: cart.isEmpty ? null : () => setState(cart.clear),
           child: const Text('Leegmaken'),
         ),
+        ],
       ]),
     );
   }
