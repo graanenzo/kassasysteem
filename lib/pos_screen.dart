@@ -10,6 +10,7 @@ import 'barcode_listener.dart';
 import 'escpos.dart';
 import 'models.dart';
 import 'numpad.dart';
+import 'onscreen_keyboard.dart';
 import 'plu_import.dart';
 import 'product_store.dart';
 import 'receipt.dart';
@@ -33,6 +34,7 @@ class _PosScreenState extends State<PosScreen> {
   late final BarcodeListener scanner;
 
   List<Product> results = [];
+  bool _showKeyboard = false;
   String? _errorCode;
   String? _errorRaw;
   Timer? _errorTimer;
@@ -604,6 +606,14 @@ class _PosScreenState extends State<PosScreen> {
           const SizedBox(width: 8),
         ],
       ),
+      bottomNavigationBar: _showKeyboard
+          ? OnScreenKeyboard(
+              controller: input,
+              onChanged: () => _onInputChanged(input.text),
+              onEnter: () => _onSubmit(input.text),
+              onClose: () => setState(() => _showKeyboard = false),
+            )
+          : null,
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : Row(children: [
@@ -741,27 +751,24 @@ class _PosScreenState extends State<PosScreen> {
           controller: input,
           focusNode: inputFocus,
           autofocus: true,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             labelText: 'PLU-nummer, EAN of zoeken',
-            border: OutlineInputBorder(),
-            prefixIcon: Icon(Icons.search),
+            border: const OutlineInputBorder(),
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: IconButton(
+              tooltip: 'Toetsenbord',
+              icon: Icon(_showKeyboard
+                  ? Icons.keyboard_hide
+                  : Icons.keyboard_alt_outlined),
+              onPressed: () =>
+                  setState(() => _showKeyboard = !_showKeyboard),
+            ),
           ),
           onChanged: _onInputChanged,
           onSubmitted: _onSubmit,
         ),
         Expanded(
-          child: results.isEmpty
-              ? SingleChildScrollView(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: NumPad(
-                    controller: input,
-                    keyHeight: 48,
-                    onChanged: () => _onInputChanged(input.text),
-                    onEnter: () => _onSubmit(input.text),
-                    enterLabel: 'Toevoegen (PLU / code)',
-                  ),
-                )
-              : ListView(children: [
+          child: ListView(children: [
             for (final p in results)
               ListTile(
                 dense: true,
