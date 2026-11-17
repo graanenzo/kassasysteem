@@ -20,7 +20,7 @@ class BarcodeListener {
     required this.onScan,
     required this.isActive,
     this.maxGap = const Duration(milliseconds: 60),
-    this.minLength = 8,
+    this.minLength = 4,
   }) {
     HardwareKeyboard.instance.addHandler(_handle);
   }
@@ -43,7 +43,7 @@ class BarcodeListener {
       return false;
     }
     final ch = e.character;
-    if (ch != null && ch.length == 1 && RegExp(r'\d').hasMatch(ch)) {
+    if (ch != null && ch.length == 1 && ch.codeUnitAt(0) >= 32) {
       _buffer.write(ch);
     }
     return false;

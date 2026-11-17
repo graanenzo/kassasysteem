@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -11,6 +13,7 @@ import 'plu_import.dart';
 import 'product_store.dart';
 import 'receipt.dart';
 import 'settings.dart';
+import 'sounds.dart';
 import 'storage.dart';
 
 class PosScreen extends StatefulWidget {
@@ -29,6 +32,8 @@ class _PosScreenState extends State<PosScreen> {
   late final BarcodeListener scanner;
 
   List<Product> results = [];
+  String? _errorCode;
+  Timer? _errorTimer;
   int todayTotal = 0;
   bool loading = true;
   DateTime _lastScanAt = DateTime.fromMillisecondsSinceEpoch(0);
@@ -55,6 +60,7 @@ class _PosScreenState extends State<PosScreen> {
 
   @override
   void dispose() {
+    _errorTimer?.cancel();
     scanner.dispose();
     input.dispose();
     inputFocus.dispose();
@@ -67,9 +73,11 @@ class _PosScreenState extends State<PosScreen> {
     _lastScanAt = DateTime.now();
     input.clear();
     setState(() => results = []);
-    final r = resolveScan(code, store);
+    final clean = code.trim();
+    // QR codes and other non-numeric codes are never products.
+    final r = RegExp(r'^\d+$').hasMatch(clean) ? resolveScan(clean, store) : null;
     if (r == null) {
-      _notFound(code);
+      _notFound(clean.length > 30 ? '${clean.substring(0, 30)}…' : clean);
       return;
     }
     _addProduct(r.product, embeddedPriceCents: r.embeddedPriceCents);
@@ -122,14 +130,24 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   void _notFound(String code) {
-    SystemSound.play(SystemSoundType.alert);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('Onbekende code: $code'),
-      backgroundColor: Colors.red.shade700,
-    ));
+    playError();
+    _errorTimer?.cancel();
+    setState(() => _errorCode = code);
+    _errorTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) setState(() => _errorCode = null);
+    });
+    inputFocus.requestFocus();
+  }
+
+  void _clearError() {
+    if (_errorCode == null) return;
+    _errorTimer?.cancel();
+    setState(() => _errorCode = null);
   }
 
   Future<void> _addProduct(Product p, {int? embeddedPriceCents}) async {
+    _clearError();
+    playOk();
     if (p.unit == SaleUnit.kg) {
       int? grams;
       int lineTotal;
@@ -481,7 +499,53 @@ class _PosScreenState extends State<PosScreen> {
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : Row(children: [
-              Expanded(child: _cartView(theme)),
+              Expanded(
+                child: Stack(children: [
+                  Positioned.fill(child: _cartView(theme)),
+                  if (_errorCode != null)
+                    Positioned(
+                      left: 16,
+                      right: 16,
+                      top: 16,
+                      child: GestureDetector(
+                        onTap: _clearError,
+                        child: Material(
+                          elevation: 6,
+                          borderRadius: BorderRadius.circular(12),
+                          color: Colors.red.shade700,
+                          child: Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Row(children: [
+                              const Icon(Icons.error_outline,
+                                  color: Colors.white, size: 40),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text('Niet herkend',
+                                        style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 24,
+                                            fontWeight: FontWeight.bold)),
+                                    Text(
+                                        'Code $_errorCode staat niet in de '
+                                        'PLU-lijst. Scan opnieuw of zoek het '
+                                        'product op.',
+                                        style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 16)),
+                                  ],
+                                ),
+                              ),
+                            ]),
+                          ),
+                        ),
+                      ),
+                    ),
+                ]),
+              ),
               const VerticalDivider(width: 1),
               SizedBox(width: 380, child: _sidePanel(theme)),
             ]),
