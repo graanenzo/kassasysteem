@@ -9,7 +9,13 @@ import 'models.dart';
 import 'storage.dart';
 
 class ProductStore {
+  /// All products: the PLU list plus products added in the app.
   List<Product> products = [];
+  List<Product> _imported = [];
+
+  /// Products added by hand in the app. Kept separately so a new PLU
+  /// import does not remove them.
+  List<Product> custom = [];
   final Map<String, Product> _byEan = {};
   final Map<int, Product> _byPlu = {};
   int duplicateEans = 0;
@@ -20,7 +26,13 @@ class ProductStore {
       code.replaceAll(RegExp(r'\D'), '').replaceFirst(RegExp(r'^0+'), '');
 
   void setProducts(List<Product> list) {
-    products = List.of(list)..sort((a, b) => a.plu.compareTo(b.plu));
+    _imported = List.of(list);
+    _rebuild();
+  }
+
+  void _rebuild() {
+    products = [..._imported, ...custom]
+      ..sort((a, b) => a.plu.compareTo(b.plu));
     _byEan.clear();
     _byPlu.clear();
     duplicateEans = 0;
@@ -65,12 +77,36 @@ class ProductStore {
       }
     }
     final list = jsonDecode(text) as List;
-    setProducts([for (final j in list) Product.fromJson(j as Map<String, dynamic>)]);
+    final customText = await readText('custom_products.json');
+    if (customText != null) {
+      custom = [
+        for (final j in jsonDecode(customText) as List)
+          Product.fromJson(j as Map<String, dynamic>)
+      ];
+    }
+    setProducts(
+        [for (final j in list) Product.fromJson(j as Map<String, dynamic>)]);
+  }
+
+  /// PLU numbers from 90000 up are used for products added in the app.
+  int nextCustomPlu() {
+    var max = 89999;
+    for (final p in custom) {
+      if (p.plu > max) max = p.plu;
+    }
+    return max + 1;
+  }
+
+  Future<void> addCustom(Product p) async {
+    custom.add(p);
+    _rebuild();
+    await writeText('custom_products.json',
+        jsonEncode([for (final c in custom) c.toJson()]));
   }
 
   Future<void> save() async {
     await writeText(
-        'products.json', jsonEncode([for (final p in products) p.toJson()]));
+        'products.json', jsonEncode([for (final p in _imported) p.toJson()]));
   }
 }
 

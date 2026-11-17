@@ -33,6 +33,7 @@ class _PosScreenState extends State<PosScreen> {
 
   List<Product> results = [];
   String? _errorCode;
+  String? _errorRaw;
   Timer? _errorTimer;
   int todayTotal = 0;
   bool loading = true;
@@ -48,6 +49,7 @@ class _PosScreenState extends State<PosScreen> {
       // Ignore scans while a dialog is open.
       isActive: () => mounted && (ModalRoute.of(context)?.isCurrent ?? true),
     );
+    initSounds();
     _load();
   }
 
@@ -77,7 +79,8 @@ class _PosScreenState extends State<PosScreen> {
     // QR codes and other non-numeric codes are never products.
     final r = RegExp(r'^\d+$').hasMatch(clean) ? resolveScan(clean, store) : null;
     if (r == null) {
-      _notFound(clean.length > 30 ? '${clean.substring(0, 30)}…' : clean);
+      _notFound(clean.length > 30 ? '${clean.substring(0, 30)}…' : clean,
+          raw: clean);
       return;
     }
     _addProduct(r.product, embeddedPriceCents: r.embeddedPriceCents);
@@ -129,11 +132,14 @@ class _PosScreenState extends State<PosScreen> {
     inputFocus.requestFocus();
   }
 
-  void _notFound(String code) {
+  void _notFound(String code, {String? raw}) {
     playError();
     _errorTimer?.cancel();
-    setState(() => _errorCode = code);
-    _errorTimer = Timer(const Duration(seconds: 4), () {
+    setState(() {
+      _errorCode = code;
+      _errorRaw = raw ?? code;
+    });
+    _errorTimer = Timer(const Duration(seconds: 6), () {
       if (mounted) setState(() => _errorCode = null);
     });
     inputFocus.requestFocus();
@@ -180,6 +186,90 @@ class _PosScreenState extends State<PosScreen> {
       });
     }
     inputFocus.requestFocus();
+  }
+
+  /// Adds a product that is not in the PLU list. With "save" checked it is
+  /// remembered (with its barcode, if given) for next time.
+  Future<void> _addOwnProduct({String? ean}) async {
+    _clearError();
+    final name = TextEditingController();
+    final price = TextEditingController();
+    final code = TextEditingController(
+        text: (ean != null && RegExp(r'^\d+$').hasMatch(ean)) ? ean : '');
+    var save = code.text.isNotEmpty;
+    final result = await showDialog<Product>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setD) {
+        final cents = parseEuro(price.text);
+        final valid = cents != null && cents > 0;
+        Product build() => Product(
+              plu: store.nextCustomPlu(),
+              name: name.text.trim().isEmpty ? 'Diversen' : name.text.trim(),
+              unit: SaleUnit.piece,
+              priceCents: cents!,
+              ean: code.text.replaceAll(RegExp(r'\D'), ''),
+            );
+        return AlertDialog(
+          scrollable: true,
+          title: const Text('Eigen product'),
+          content: SizedBox(
+            width: 380,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              TextField(
+                controller: name,
+                autofocus: true,
+                decoration: const InputDecoration(
+                    labelText: 'Naam', hintText: 'bijv. Diversen'),
+              ),
+              TextField(
+                controller: price,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                    labelText: 'Prijs', prefixText: '€ '),
+                onChanged: (_) => setD(() {}),
+                onSubmitted: (_) {
+                  if (valid) Navigator.pop(ctx, build());
+                },
+              ),
+              TextField(
+                controller: code,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                    labelText: 'Barcode (optioneel, je kunt hier scannen)'),
+                onChanged: (v) => setD(() {
+                  if (v.trim().isNotEmpty) save = true;
+                }),
+              ),
+              const SizedBox(height: 8),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: save,
+                onChanged: (v) => setD(() => save = v ?? false),
+                title: const Text('Bewaren in productlijst'),
+                subtitle: const Text(
+                    'Dan wordt hij de volgende keer herkend bij scannen'),
+              ),
+            ]),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Annuleren')),
+            FilledButton(
+              onPressed: valid ? () => Navigator.pop(ctx, build()) : null,
+              child: const Text('Toevoegen'),
+            ),
+          ],
+        );
+      }),
+    );
+    if (result == null) {
+      inputFocus.requestFocus();
+      return;
+    }
+    if (save) await store.addCustom(result);
+    await _addProduct(result);
   }
 
   Future<int?> _askGrams(Product p) async {
@@ -477,7 +567,9 @@ class _PosScreenState extends State<PosScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Scaffold(
+    return Listener(
+      onPointerDown: (_) => unlockSounds(),
+      child: Scaffold(
       appBar: AppBar(
         title: Text(settings.shopName),
         actions: [
@@ -539,6 +631,16 @@ class _PosScreenState extends State<PosScreen> {
                                   ],
                                 ),
                               ),
+                              if (RegExp(r'^\d+$')
+                                  .hasMatch(_errorRaw ?? ''))
+                                FilledButton(
+                                  style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.white,
+                                      foregroundColor: Colors.red.shade700),
+                                  onPressed: () =>
+                                      _addOwnProduct(ean: _errorRaw),
+                                  child: const Text('Toevoegen'),
+                                ),
                             ]),
                           ),
                         ),
@@ -549,6 +651,7 @@ class _PosScreenState extends State<PosScreen> {
               const VerticalDivider(width: 1),
               SizedBox(width: 380, child: _sidePanel(theme)),
             ]),
+      ),
     );
   }
 
@@ -671,6 +774,12 @@ class _PosScreenState extends State<PosScreen> {
             icon: const Icon(Icons.check),
             label: const Text('Geen bon', style: TextStyle(fontSize: 20)),
           ),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () => _addOwnProduct(),
+          icon: const Icon(Icons.add),
+          label: const Text('Eigen product / prijs'),
         ),
         const SizedBox(height: 8),
         OutlinedButton(
