@@ -15,6 +15,20 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
+  <script>
+    // Remove a service worker left by an earlier version, so old cached
+    // files are no longer used.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function (regs) {
+        regs.forEach(function (r) { r.unregister(); });
+      });
+    }
+    if (window.caches) {
+      caches.keys().then(function (keys) {
+        keys.forEach(function (k) { caches.delete(k); });
+      });
+    }
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
