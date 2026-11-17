@@ -589,7 +589,8 @@ class _PosScreenState extends State<PosScreen> {
       onPointerDown: (_) => unlockSounds(),
       child: Scaffold(
       appBar: AppBar(
-        title: Text(settings.shopName),
+        toolbarHeight: 64,
+        title: Image.asset('assets/logo.png', height: 46),
         actions: [
           Center(child: Text('Vandaag: ${euro(todayTotal)}')),
           const SizedBox(width: 16),
@@ -619,6 +620,10 @@ class _PosScreenState extends State<PosScreen> {
           : Row(children: [
               Expanded(
                 child: Stack(children: [
+                  Positioned.fill(
+                    child: Image.asset('assets/background.jpg',
+                        fit: BoxFit.cover),
+                  ),
                   Positioned.fill(child: _cartView(theme)),
                   if (_errorCode != null)
                     Positioned(
@@ -675,7 +680,10 @@ class _PosScreenState extends State<PosScreen> {
                 ]),
               ),
               const VerticalDivider(width: 1),
-              SizedBox(width: 380, child: _sidePanel(theme)),
+              ColoredBox(
+                color: Colors.white,
+                child: SizedBox(width: 380, child: _sidePanel(theme)),
+              ),
             ]),
       ),
     );
@@ -697,11 +705,32 @@ class _PosScreenState extends State<PosScreen> {
     }
     if (cart.isEmpty) {
       return Center(
-        child: Text('Scan een product',
-            style: theme.textTheme.headlineSmall
-                ?.copyWith(color: theme.colorScheme.outline)),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(40, 32, 40, 28),
+          decoration: BoxDecoration(
+            color: const Color(0xCCFFFFFF),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Image.asset('assets/logo.png', width: 280),
+            const SizedBox(height: 24),
+            Text('Scan een product', style: theme.textTheme.headlineSmall),
+          ]),
+        ),
       );
     }
+    return Container(
+      margin: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xE6FFFFFF),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: _cartList(theme),
+    );
+  }
+
+  Widget _cartList(ThemeData theme) {
     return ListView.separated(
       padding: const EdgeInsets.all(8),
       itemCount: cart.length,
