@@ -6,6 +6,9 @@ import 'dart:convert';
 import 'models.dart';
 import 'storage.dart';
 
+/// Address of the shop's Epson receipt printer, used when none is set.
+const defaultPrinterIp = '192.168.15.82';
+
 class Settings {
   String shopName;
   String address; // multiple lines allowed
@@ -27,7 +30,7 @@ class Settings {
     this.footer = 'Bedankt voor uw bezoek!',
     this.printerUrl,
     this.printerName,
-    this.printerIp = '',
+    this.printerIp = defaultPrinterIp,
     this.receiptWidth = 33,
     this.nextReceiptNo = 1,
   });
@@ -49,7 +52,9 @@ class Settings {
         footer: (j['footer'] ?? '') as String,
         printerUrl: j['printerUrl'] as String?,
         printerName: j['printerName'] as String?,
-        printerIp: (j['printerIp'] ?? '') as String,
+        printerIp: ((j['printerIp'] as String?)?.trim().isNotEmpty ?? false)
+            ? j['printerIp'] as String
+            : defaultPrinterIp,
         receiptWidth: (j['receiptWidth'] ?? 33) as int,
         nextReceiptNo: (j['nextReceiptNo'] ?? 1) as int,
       );
