@@ -9,6 +9,7 @@ import 'package:printing/printing.dart';
 import 'barcode_listener.dart';
 import 'escpos.dart';
 import 'models.dart';
+import 'numpad.dart';
 import 'plu_import.dart';
 import 'product_store.dart';
 import 'receipt.dart';
@@ -231,6 +232,13 @@ class _PosScreenState extends State<PosScreen> {
                   if (valid) Navigator.pop(ctx, build());
                 },
               ),
+              const SizedBox(height: 8),
+              NumPad(
+                controller: price,
+                decimal: true,
+                keyHeight: 44,
+                onChanged: () => setD(() {}),
+              ),
               TextField(
                 controller: code,
                 keyboardType: TextInputType.number,
@@ -287,6 +295,15 @@ class _PosScreenState extends State<PosScreen> {
             decoration: const InputDecoration(
                 labelText: 'Gewicht', suffixText: 'gram'),
             onSubmitted: (v) => Navigator.pop(ctx, int.tryParse(v.trim())),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: 300,
+            child: NumPad(
+              controller: c,
+              onEnter: () => Navigator.pop(ctx, int.tryParse(c.text.trim())),
+              enterLabel: 'Toevoegen',
+            ),
           ),
         ]),
         actions: [
@@ -733,7 +750,18 @@ class _PosScreenState extends State<PosScreen> {
           onSubmitted: _onSubmit,
         ),
         Expanded(
-          child: ListView(children: [
+          child: results.isEmpty
+              ? SingleChildScrollView(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: NumPad(
+                    controller: input,
+                    keyHeight: 48,
+                    onChanged: () => _onInputChanged(input.text),
+                    onEnter: () => _onSubmit(input.text),
+                    enterLabel: 'Toevoegen (PLU / code)',
+                  ),
+                )
+              : ListView(children: [
             for (final p in results)
               ListTile(
                 dense: true,
