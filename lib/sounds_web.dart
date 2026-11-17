@@ -1,10 +1,27 @@
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
+
 import 'package:web/web.dart' as web;
 
 // Tones are generated with the Web Audio API: nothing to download or
 // decode, so they start the instant they are triggered.
 web.AudioContext? _ctx;
 
-Future<void> initSounds() async {}
+Future<void> initSounds() async {
+  // Safari 17+: play like a media app, so the error tone is also heard when
+  // the iPad is set to silent.
+  try {
+    final nav = globalContext['navigator'] as JSObject?;
+    final session = nav?['audioSession'] as JSObject?;
+    session?['type'] = 'playback'.toJS;
+  } catch (_) {}
+}
+
+/// False while Safari still blocks sound (until the screen is tapped).
+bool soundsReady() {
+  final ctx = _ctx;
+  return ctx != null && ctx.state == 'running';
+}
 
 /// Safari only allows sound after a touch; call this on the first tap.
 void unlockSounds() {

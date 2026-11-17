@@ -35,6 +35,7 @@ class _PosScreenState extends State<PosScreen> {
 
   List<Product> results = [];
   bool _showKeyboard = false;
+  bool _soundOk = true;
   String? _errorCode;
   String? _errorRaw;
   Timer? _errorTimer;
@@ -53,6 +54,7 @@ class _PosScreenState extends State<PosScreen> {
       isActive: () => mounted && (ModalRoute.of(context)?.isCurrent ?? true),
     );
     initSounds();
+    _soundOk = soundsReady();
     _load();
   }
 
@@ -135,8 +137,18 @@ class _PosScreenState extends State<PosScreen> {
     inputFocus.requestFocus();
   }
 
+  void _unlockSound() {
+    unlockSounds();
+    Future.delayed(const Duration(milliseconds: 400), () {
+      if (mounted && _soundOk != soundsReady()) {
+        setState(() => _soundOk = soundsReady());
+      }
+    });
+  }
+
   void _notFound(String code, {String? raw}) {
     playError();
+    _unlockSound();
     _errorTimer?.cancel();
     setState(() {
       _errorCode = code;
@@ -617,7 +629,7 @@ class _PosScreenState extends State<PosScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Listener(
-      onPointerDown: (_) => unlockSounds(),
+      onPointerDown: (_) => _unlockSound(),
       child: Scaffold(
       appBar: AppBar(
         toolbarHeight: 64,
@@ -648,7 +660,31 @@ class _PosScreenState extends State<PosScreen> {
           : null,
       body: loading
           ? const Center(child: CircularProgressIndicator())
-          : Row(children: [
+          : Column(children: [
+              if (!_soundOk)
+                Material(
+                  color: const Color(0xFF1A1A1A),
+                  child: InkWell(
+                    onTap: _unlockSound,
+                    child: const Padding(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      child: Row(children: [
+                        Icon(Icons.volume_off, color: Colors.white),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Geluid staat nog uit. Tik hier om het aan te '
+                            'zetten, en controleer het volume van de iPad.',
+                            style: TextStyle(color: Colors.white, fontSize: 16),
+                          ),
+                        ),
+                      ]),
+                    ),
+                  ),
+                ),
+              Expanded(
+              child: Row(children: [
               Expanded(
                 child: Stack(children: [
                   Positioned.fill(
@@ -714,6 +750,8 @@ class _PosScreenState extends State<PosScreen> {
               ColoredBox(
                 color: Colors.white,
                 child: SizedBox(width: 380, child: _sidePanel(theme)),
+              ),
+            ]),
               ),
             ]),
       ),

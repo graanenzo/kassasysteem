@@ -17,6 +17,8 @@ Future<void> initSounds() async {
 
 void unlockSounds() {}
 
+bool soundsReady() => true;
+
 Future<void> _replay(AudioPlayer? p) async {
   if (p == null) return;
   try {
