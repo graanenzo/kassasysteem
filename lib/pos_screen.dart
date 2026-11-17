@@ -152,8 +152,7 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Future<void> _addProduct(Product p, {int? embeddedPriceCents}) async {
-    _clearError();
-    playOk();
+    _clearError(); // the scanner beeps itself on a good scan
     if (p.unit == SaleUnit.kg) {
       int? grams;
       int lineTotal;
