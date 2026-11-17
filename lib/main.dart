@@ -17,13 +17,16 @@ class KassaApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        // Graan & Zo: black with the gold of the '&' in the logo.
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFE8AC00))
-            .copyWith(
+        // Graan & Zo: black, white and neutral greys.
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF1A1A1A),
+          dynamicSchemeVariant: DynamicSchemeVariant.monochrome,
+        ).copyWith(
           primary: const Color(0xFF1A1A1A),
           onPrimary: Colors.white,
-          secondaryContainer: const Color(0xFFFFE6A3),
+          secondaryContainer: const Color(0xFFEDEDED),
           onSecondaryContainer: const Color(0xFF1A1A1A),
+          surface: Colors.white,
         ),
         appBarTheme: const AppBarTheme(
           backgroundColor: Colors.white,

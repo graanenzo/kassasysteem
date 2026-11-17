@@ -199,6 +199,9 @@ class _PosScreenState extends State<PosScreen> {
     final code = TextEditingController(
         text: (ean != null && RegExp(r'^\d+$').hasMatch(ean)) ? ean : '');
     var save = code.text.isNotEmpty;
+    // Which on-screen keys are shown: 'name' (letters), 'price' (numbers)
+    // or 'none'.
+    var pad = 'price';
     final result = await showDialog<Product>(
       context: context,
       builder: (ctx) => StatefulBuilder(builder: (ctx, setD) {
@@ -215,32 +218,60 @@ class _PosScreenState extends State<PosScreen> {
           scrollable: true,
           title: const Text('Eigen product'),
           content: SizedBox(
-            width: 380,
+            width: pad == 'name' ? 640 : 400,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               TextField(
                 controller: name,
                 autofocus: true,
-                decoration: const InputDecoration(
-                    labelText: 'Naam', hintText: 'bijv. Diversen'),
+                onTap: () => setD(() => pad = 'name'),
+                decoration: InputDecoration(
+                  labelText: 'Naam',
+                  hintText: 'bijv. Diversen',
+                  suffixIcon: IconButton(
+                    tooltip: 'Toetsenbord',
+                    icon: Icon(pad == 'name'
+                        ? Icons.keyboard_hide
+                        : Icons.keyboard_alt_outlined),
+                    onPressed: () =>
+                        setD(() => pad = pad == 'name' ? 'none' : 'name'),
+                  ),
+                ),
               ),
               TextField(
                 controller: price,
+                onTap: () => setD(() => pad = 'price'),
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                    labelText: 'Prijs', prefixText: '€ '),
+                decoration: InputDecoration(
+                  labelText: 'Prijs',
+                  prefixText: '€ ',
+                  suffixIcon: IconButton(
+                    tooltip: 'Cijfers',
+                    icon: const Icon(Icons.dialpad),
+                    onPressed: () =>
+                        setD(() => pad = pad == 'price' ? 'none' : 'price'),
+                  ),
+                ),
                 onChanged: (_) => setD(() {}),
                 onSubmitted: (_) {
                   if (valid) Navigator.pop(ctx, build());
                 },
               ),
               const SizedBox(height: 8),
-              NumPad(
-                controller: price,
-                decimal: true,
-                keyHeight: 44,
-                onChanged: () => setD(() {}),
-              ),
+              if (pad == 'name')
+                OnScreenKeyboard(
+                  controller: name,
+                  onChanged: () => setD(() {}),
+                  onEnter: () => setD(() => pad = 'price'),
+                  onClose: () => setD(() => pad = 'none'),
+                ),
+              if (pad == 'price')
+                NumPad(
+                  controller: price,
+                  decimal: true,
+                  keyHeight: 44,
+                  onChanged: () => setD(() {}),
+                ),
               TextField(
                 controller: code,
                 keyboardType: TextInputType.number,
