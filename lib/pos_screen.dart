@@ -40,6 +40,7 @@ class _PosScreenState extends State<PosScreen> {
   String? _errorCode;
   String? _errorRaw;
   Timer? _errorTimer;
+  Timer? _labelTimer;
   int todayTotal = 0;
   bool loading = true;
   DateTime _lastScanAt = DateTime.fromMillisecondsSinceEpoch(0);
@@ -65,6 +66,9 @@ class _PosScreenState extends State<PosScreen> {
     todayTotal = await SalesLog.todayTotal();
     if (mounted) setState(() => loading = false);
     _syncLabels(quiet: true);
+    // New packagings in the sticker app show up during the day as well.
+    _labelTimer = Timer.periodic(
+        const Duration(minutes: 10), (_) => _syncLabels(quiet: true));
   }
 
   bool _syncing = false;
@@ -107,6 +111,7 @@ class _PosScreenState extends State<PosScreen> {
   @override
   void dispose() {
     _errorTimer?.cancel();
+    _labelTimer?.cancel();
     scanner.dispose();
     input.dispose();
     inputFocus.dispose();
@@ -121,8 +126,15 @@ class _PosScreenState extends State<PosScreen> {
     setState(() => results = []);
     final clean = code.trim();
     // QR codes and other non-numeric codes are never products.
-    final r = RegExp(r'^\d+$').hasMatch(clean) ? resolveScan(clean, store) : null;
+    final numeric = RegExp(r'^\d+$').hasMatch(clean);
+    final r = numeric ? resolveScan(clean, store) : null;
     if (r == null) {
+      // An in-store sticker we don't know yet may be a packaging that was
+      // just added in the sticker app: fetch it and try once more.
+      if (numeric && clean.length == 13 && clean.startsWith('2')) {
+        _retryAfterLabelSync(clean);
+        return;
+      }
       _notFound(clean.length > 30 ? '${clean.substring(0, 30)}…' : clean,
           raw: clean);
       return;
@@ -130,6 +142,24 @@ class _PosScreenState extends State<PosScreen> {
     _addProduct(r.product,
         embeddedPriceCents: r.embeddedPriceCents,
         embeddedGrams: r.embeddedGrams);
+  }
+
+  Future<void> _retryAfterLabelSync(String code) async {
+    try {
+      await store.syncLabels();
+    } catch (_) {
+      // Offline: fall through to "not found".
+    }
+    if (!mounted) return;
+    setState(() {});
+    final r = resolveScan(code, store);
+    if (r == null) {
+      _notFound(code, raw: code);
+    } else {
+      _addProduct(r.product,
+          embeddedPriceCents: r.embeddedPriceCents,
+          embeddedGrams: r.embeddedGrams);
+    }
   }
 
   void _onSubmit(String text) {

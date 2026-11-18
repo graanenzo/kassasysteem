@@ -105,4 +105,15 @@ void main() {
     expect(r.product.plu, 63);
     expect(r.embeddedPriceCents, 1520);
   });
+
+  test('new PLU in the sticker app is scannable without PLU file entry', () {
+    final s = ProductStore()
+      ..labels = const [
+        LabelItem(plu: 1099, title: 'Nieuw', contents: '1 kilo', priceCents: 450),
+      ]
+      ..setProducts(imported);
+    expect(s.byPlu(1099)!.name, 'Nieuw');
+    final r = resolveScan(storeEan(1099, 450), s)!;
+    expect(r.product.plu, 1099);
+  });
 }
