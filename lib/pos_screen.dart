@@ -11,6 +11,7 @@ import 'escpos.dart';
 import 'models.dart';
 import 'numpad.dart';
 import 'onscreen_keyboard.dart';
+import 'plu_export.dart';
 import 'plu_import.dart';
 import 'product_store.dart';
 import 'receipt.dart';
@@ -426,8 +427,7 @@ class _PosScreenState extends State<PosScreen> {
       if (r.products.isEmpty) {
         throw const FormatException('geen producten gevonden');
       }
-      store.setProducts(r.products);
-      await store.save();
+      await store.replaceImported(r.products);
       if (!mounted) return;
       setState(() {});
       await showDialog<void>(
@@ -451,6 +451,28 @@ class _PosScreenState extends State<PosScreen> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Inlezen mislukt: $e')));
     }
+  }
+
+  Future<void> _export() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final bytes = exportPluXlsx(store.products);
+      final saved = await saveFileAs(pluExportFileName(DateTime.now()), bytes);
+      if (saved != null) {
+        messenger.showSnackBar(SnackBar(
+          content: Text('${store.products.length} producten geëxporteerd naar '
+              '$saved. Pas de prijzen aan in Excel en lees het bestand '
+              'daarna weer in met "PLU inlezen".'),
+          duration: const Duration(seconds: 8),
+        ));
+      }
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(
+        content: Text('Exporteren mislukt: $e'),
+        backgroundColor: Colors.red.shade700,
+      ));
+    }
+    inputFocus.requestFocus();
   }
 
   Future<void> _editSettings() async {
@@ -641,6 +663,11 @@ class _PosScreenState extends State<PosScreen> {
             onPressed: _import,
             icon: const Icon(Icons.upload_file),
             label: Text('PLU inlezen (${store.products.length})'),
+          ),
+          TextButton.icon(
+            onPressed: store.products.isEmpty ? null : _export,
+            icon: const Icon(Icons.download),
+            label: const Text('PLU exporteren'),
           ),
           IconButton(
             tooltip: 'Instellingen',

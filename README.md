@@ -3,6 +3,8 @@
 Flutter-desktopkassa voor laptop met USB EAN-scanner.
 
 - **PLU inlezen**: export van het PLU-systeem (`B_PLU.CSV` of als `.xlsx` opgeslagen)
+- **PLU exporteren**: de huidige lijst (incl. zelf toegevoegde producten) als `.xlsx`
+  in dezelfde kolomindeling; prijzen aanpassen in Excel en weer inlezen
 - **Scannen**: herkent EAN-codes uit de PLU-lijst, en eigen winkel-/weegschaalcodes
   (`20` + PLU 5 cijfers + prijs 5 cijfers + controlecijfer)
 - **Handmatig**: PLU-nummer typen + Enter, of zoeken op naam
@@ -41,7 +43,7 @@ Voeg in `macos/Runner/DebugProfile.entitlements` én `Release.entitlements` toe:
 | B | Naam |
 | C | Omschrijving (2e regel) |
 | D | `P` = per kg, `C` = per stuk |
-| E | Prijs in centen |
+| E | Prijs in centen (`499`); een bedrag met komma (`4,99`) mag ook |
 | R | EAN-code |
 
 ## Scanner

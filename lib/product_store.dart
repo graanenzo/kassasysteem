@@ -104,6 +104,22 @@ class ProductStore {
         jsonEncode([for (final c in custom) c.toJson()]));
   }
 
+  /// Replaces the PLU list with an imported one and saves it. Products added
+  /// in the app that are also in the imported file (e.g. because an exported
+  /// list was edited and read back) are taken over by the file, so they do
+  /// not appear twice.
+  Future<void> replaceImported(List<Product> list) async {
+    final plus = {for (final p in list) p.plu};
+    final before = custom.length;
+    custom = [for (final c in custom) if (!plus.contains(c.plu)) c];
+    setProducts(list);
+    await save();
+    if (custom.length != before) {
+      await writeText('custom_products.json',
+          jsonEncode([for (final c in custom) c.toJson()]));
+    }
+  }
+
   Future<void> save() async {
     await writeText(
         'products.json', jsonEncode([for (final p in _imported) p.toJson()]));

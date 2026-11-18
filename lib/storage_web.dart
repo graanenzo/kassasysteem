@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:js_interop';
 import 'dart:typed_data';
 
 import 'package:web/web.dart' as web;
@@ -29,3 +30,23 @@ Future<void> deleteStored(String name) async =>
 
 Future<Uint8List> readPickedPath(String path) =>
     throw UnsupportedError('Op het web komt het bestand altijd als bytes');
+
+/// Starts a browser download of [bytes] as [fileName]. Returns the file name.
+Future<String?> saveFileAs(String fileName, Uint8List bytes) async {
+  final blob = web.Blob(
+    <JSAny>[bytes.toJS].toJS,
+    web.BlobPropertyBag(
+        type: 'application/vnd.openxmlformats-officedocument'
+            '.spreadsheetml.sheet'),
+  );
+  final url = web.URL.createObjectURL(blob);
+  final a = web.HTMLAnchorElement()
+    ..href = url
+    ..download = fileName;
+  web.document.body!.appendChild(a);
+  a.click();
+  a.remove();
+  // Give Safari time to start the download before releasing the blob.
+  Future.delayed(const Duration(seconds: 30), () => web.URL.revokeObjectURL(url));
+  return fileName;
+}

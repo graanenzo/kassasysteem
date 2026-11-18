@@ -5,7 +5,7 @@
 ///   1  name
 ///   2  description / second line
 ///   3  P = price per kg (weighed), C = price per piece
-///   4  price in cents
+///   4  price in cents (a euro amount with decimals, e.g. 4,99, also works)
 ///   17 EAN barcode (empty if none)
 library;
 
@@ -42,7 +42,7 @@ PluImportResult parsePluRows(List<List<String>> rows) {
       continue;
     }
     final plu = int.tryParse(r[0].trim());
-    final price = int.tryParse(r[4].trim());
+    final price = _parsePrice(r[4]);
     final name = r[1].trim();
     if (plu == null || price == null || name.isEmpty) {
       skipped++; // header or empty row
@@ -60,6 +60,16 @@ PluImportResult parsePluRows(List<List<String>> rows) {
     ));
   }
   return PluImportResult(products, skipped);
+}
+
+/// Price in cents as in the PLU export ("1700"). A price typed in euros with
+/// a decimal separator ("4,99" or 4.99 in Excel) is accepted too.
+int? _parsePrice(String s) {
+  final t = s.trim();
+  final cents = int.tryParse(t);
+  if (cents != null) return cents;
+  if (t.contains(',') || t.contains('.')) return parseEuro(t);
+  return null;
 }
 
 List<List<String>> _xlsxRows(Uint8List bytes) {
