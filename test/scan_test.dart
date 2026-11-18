@@ -36,11 +36,19 @@ void main() {
     expect(resolveScan('0680275067849', store)!.product.plu, 99);
   });
 
-  test('scale label: 20 + PLU + price + check', () {
-    final r = resolveScan('2000004004256', store)!; // PLU 4, 4,25
+  test('scale label for product per kg: 20 + PLU + grams + check', () {
+    final r = resolveScan('2000004002659', store)!; // PLU 4, 265 g
     expect(r.product.plu, 4);
     expect(r.product.unit, SaleUnit.kg);
-    expect(r.embeddedPriceCents, 425);
+    expect(r.embeddedGrams, 265);
+    expect(r.embeddedPriceCents, isNull);
+  });
+
+  test('sticker for product per piece: 20 + PLU + price + check', () {
+    final r = resolveScan('2000064002598', store)!; // PLU 64, 2,59
+    expect(r.product.plu, 64);
+    expect(r.embeddedPriceCents, 259);
+    expect(r.embeddedGrams, isNull);
   });
 
   test('unknown code', () {

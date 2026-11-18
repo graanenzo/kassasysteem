@@ -64,6 +64,44 @@ class _PosScreenState extends State<PosScreen> {
     settings = await Settings.load();
     todayTotal = await SalesLog.todayTotal();
     if (mounted) setState(() => loading = false);
+    _syncLabels(quiet: true);
+  }
+
+  bool _syncing = false;
+
+  /// Gets prices and EANs from the sticker app. At startup this runs quietly
+  /// (offline the cached prices stay in use); from the button it reports.
+  Future<void> _syncLabels({bool quiet = false}) async {
+    if (_syncing || !mounted) return;
+    setState(() => _syncing = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final changed = await store.syncLabels();
+      if (!quiet || changed > 0) {
+        messenger.showSnackBar(SnackBar(
+          content: Text('Stickerapp: ${store.labelProductCount} producten, '
+              '$changed prijs${changed == 1 ? '' : 'zen'} bijgewerkt'),
+        ));
+      }
+    } catch (e) {
+      if (!quiet) {
+        messenger.showSnackBar(SnackBar(
+          content: Text('Stickerapp niet bereikbaar: $e\n'
+              'De laatst opgehaalde prijzen blijven in gebruik.'),
+          backgroundColor: Colors.red.shade700,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  String get _labelsTooltip {
+    final t = store.labelsFetchedAt;
+    if (t == null) return 'Prijzen uit stickerapp ophalen';
+    String two(int n) => n.toString().padLeft(2, '0');
+    return 'Prijzen uit stickerapp ophalen\n'
+        'Laatst: ${two(t.day)}-${two(t.month)} ${two(t.hour)}:${two(t.minute)}';
   }
 
   @override
@@ -89,7 +127,9 @@ class _PosScreenState extends State<PosScreen> {
           raw: clean);
       return;
     }
-    _addProduct(r.product, embeddedPriceCents: r.embeddedPriceCents);
+    _addProduct(r.product,
+        embeddedPriceCents: r.embeddedPriceCents,
+        embeddedGrams: r.embeddedGrams);
   }
 
   void _onSubmit(String text) {
@@ -100,19 +140,20 @@ class _PosScreenState extends State<PosScreen> {
 
     if (RegExp(r'^\d+$').hasMatch(t)) {
       Product? p;
-      int? embedded;
+      ScanResult? r;
       if (t.length <= 5) {
         p = store.byPlu(int.parse(t)); // typed PLU number
       } else {
-        final r = resolveScan(t, store); // typed barcode
+        r = resolveScan(t, store); // typed barcode
         p = r?.product;
-        embedded = r?.embeddedPriceCents;
       }
       _clearInput();
       if (p == null) {
         _notFound(t);
       } else {
-        _addProduct(p, embeddedPriceCents: embedded);
+        _addProduct(p,
+            embeddedPriceCents: r?.embeddedPriceCents,
+            embeddedGrams: r?.embeddedGrams);
       }
       return;
     }
@@ -167,17 +208,16 @@ class _PosScreenState extends State<PosScreen> {
     setState(() => _errorCode = null);
   }
 
-  Future<void> _addProduct(Product p, {int? embeddedPriceCents}) async {
+  Future<void> _addProduct(Product p,
+      {int? embeddedPriceCents, int? embeddedGrams}) async {
     _clearError(); // the scanner beeps itself on a good scan
     if (p.unit == SaleUnit.kg) {
       int? grams;
       int lineTotal;
-      if (embeddedPriceCents != null) {
-        // Label from the scale: price is already calculated.
-        lineTotal = embeddedPriceCents;
-        grams = p.priceCents > 0
-            ? (embeddedPriceCents * 1000 / p.priceCents).round()
-            : null;
+      if (embeddedGrams != null) {
+        // Label from the scale: the barcode holds the weight in grams.
+        grams = embeddedGrams;
+        lineTotal = (p.priceCents * grams / 1000).round();
       } else {
         grams = await _askGrams(p);
         if (grams == null) return;
@@ -186,17 +226,19 @@ class _PosScreenState extends State<PosScreen> {
       setState(() => cart.add(
           CartLine(product: p, unitPriceCents: lineTotal, grams: grams)));
     } else {
+      // A sticker with a price in the barcode: the price on the sticker counts.
+      final price = embeddedPriceCents ?? p.priceCents;
       setState(() {
         final i = cart.indexWhere((l) =>
             l.product.plu == p.plu &&
             l.grams == null &&
-            l.unitPriceCents == p.priceCents);
+            l.unitPriceCents == price);
         if (i >= 0) {
           final line = cart.removeAt(i);
           line.quantity++;
           cart.add(line);
         } else {
-          cart.add(CartLine(product: p, unitPriceCents: p.priceCents));
+          cart.add(CartLine(product: p, unitPriceCents: price));
         }
       });
     }
@@ -663,6 +705,16 @@ class _PosScreenState extends State<PosScreen> {
             onPressed: _import,
             icon: const Icon(Icons.upload_file),
             label: Text('PLU inlezen (${store.products.length})'),
+          ),
+          IconButton(
+            tooltip: _labelsTooltip,
+            onPressed: _syncing ? null : () => _syncLabels(),
+            icon: _syncing
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.sync),
           ),
           TextButton.icon(
             onPressed: store.products.isEmpty ? null : _export,

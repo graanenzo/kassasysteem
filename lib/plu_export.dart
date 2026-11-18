@@ -8,7 +8,9 @@
 ///   2  description / second line
 ///   3  P = price per kg (weighed), C = price per piece
 ///   4  price in cents
-///   17 EAN barcode
+///   17 EAN barcode (full 13 digits where known)
+///   18 source: "stickerapp" when price and EAN come from the sticker app
+///      (change those in the sticker app; the import ignores this column)
 /// Columns 5–16 of the original export are not kept by the app and stay empty.
 library;
 
@@ -25,6 +27,7 @@ const pluExportHeader = <int, String>{
   3: 'P=per kg, C=per stuk',
   4: 'Prijs (centen)',
   17: 'EAN',
+  18: 'Bron',
 };
 
 Uint8List exportPluXlsx(List<Product> products) {
@@ -32,7 +35,7 @@ Uint8List exportPluXlsx(List<Product> products) {
   final sheet = excel[excel.getDefaultSheet()!];
 
   sheet.appendRow([
-    for (var i = 0; i <= 17; i++) TextCellValue(pluExportHeader[i] ?? ''),
+    for (var i = 0; i <= 18; i++) TextCellValue(pluExportHeader[i] ?? ''),
   ]);
   for (final p in products) {
     sheet.appendRow([
@@ -44,6 +47,7 @@ Uint8List exportPluXlsx(List<Product> products) {
       for (var i = 5; i <= 16; i++) null,
       // Text, so Excel does not turn long barcodes into 4,01553E+12.
       TextCellValue(p.ean),
+      TextCellValue(p.fromLabelApp ? 'stickerapp' : ''),
     ]);
   }
 
@@ -52,6 +56,7 @@ Uint8List exportPluXlsx(List<Product> products) {
   sheet.setColumnWidth(3, 20);
   sheet.setColumnWidth(4, 14);
   sheet.setColumnWidth(17, 16);
+  sheet.setColumnWidth(18, 12);
 
   return Uint8List.fromList(excel.encode()!);
 }

@@ -3,13 +3,18 @@
 Flutter-desktopkassa voor laptop met USB EAN-scanner.
 
 - **PLU inlezen**: export van het PLU-systeem (`B_PLU.CSV` of als `.xlsx` opgeslagen)
+- **Stickerapp is leidend**: bij het opstarten (en met de ⟳-knop) haalt de kassa
+  prijzen, namen en EAN-codes op uit de stickerapp (Supabase-functie
+  `kassa_verpakkingen`). Voor die PLU's wint de stickerapp; zonder internet
+  blijven de laatst opgehaalde prijzen in gebruik.
 - **PLU exporteren**: de huidige lijst (incl. zelf toegevoegde producten) als `.xlsx`
   in dezelfde kolomindeling; prijzen aanpassen in Excel en weer inlezen
 - **Scannen**: herkent EAN-codes uit de PLU-lijst, en eigen winkel-/weegschaalcodes
   (`20` + PLU 5 cijfers + prijs 5 cijfers + controlecijfer)
 - **Handmatig**: PLU-nummer typen + Enter, of zoeken op naam
 - **Weegartikelen** (`P` in de PLU-lijst, prijs per kg): gewicht invoeren, of
-  het label van de weegschaal scannen (prijs komt uit de barcode)
+  het label van de weegschaal scannen (gewicht in grammen komt uit de barcode,
+  bijv. `2000002002659` = PLU 2, 265 g)
 - **Afrekenen**: pin of contant (met wisselgeld) → bon op 80 mm bonprinter
 - Verkopen worden gelogd; dagomzet staat bovenin
 

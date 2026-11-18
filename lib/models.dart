@@ -16,6 +16,9 @@ class Product {
   final String ean;
   final int vatPercent;
 
+  /// Price and EAN come from the sticker app (not saved; set on merge).
+  final bool fromLabelApp;
+
   const Product({
     required this.plu,
     required this.name,
@@ -24,7 +27,19 @@ class Product {
     required this.priceCents,
     this.ean = '',
     this.vatPercent = 9,
+    this.fromLabelApp = false,
   });
+
+  Product copyWith({String? ean}) => Product(
+        plu: plu,
+        name: name,
+        description: description,
+        unit: unit,
+        priceCents: priceCents,
+        ean: ean ?? this.ean,
+        vatPercent: vatPercent,
+        fromLabelApp: fromLabelApp,
+      );
 
   String get displayName =>
       description.isEmpty ? name : '$name $description';
