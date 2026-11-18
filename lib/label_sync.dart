@@ -98,19 +98,24 @@ String storeEan(int plu, int priceCents) {
   return '$base${ean13CheckDigit(base)}';
 }
 
-/// Makes the full 13-digit code where the PLU file has a shortened one:
+/// Makes a full 13-digit code for a product per piece:
+/// - no code: the in-store code for this PLU and price (as on a sticker);
 /// - 11/12 digits that are a valid EAN-13 once the lost leading zeros are
-///   added back (UPC codes saved through Excel) get those zeros;
-/// - other shortened in-store codes (starting with 2) become the in-store
-///   code for this PLU and price.
-/// Anything else is left as it is.
+///   added back (UPC codes saved through Excel): add those zeros;
+/// - other shortened in-store codes (starting with 2): the in-store code for
+///   this PLU and price;
+/// - other 12-digit codes: the last digit (check digit) was cut off, so it
+///   is calculated and added back.
+/// Anything else (8-digit EAN-8, odd lengths) is left as it is.
 String completeEan(String ean, int plu, int priceCents) {
-  if (ean.isEmpty || isValidEan13(ean)) return ean;
+  if (ean.isEmpty) return storeEan(plu, priceCents);
+  if (isValidEan13(ean)) return ean;
   if (ean.length == 11 || ean.length == 12) {
     final padded = ean.padLeft(13, '0');
     if (isValidEan13(padded)) return padded;
   }
   if (ean.startsWith('2') && ean.length <= 13) return storeEan(plu, priceCents);
+  if (ean.length == 12) return '$ean${ean13CheckDigit(ean)}';
   return ean;
 }
 

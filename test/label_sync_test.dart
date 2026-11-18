@@ -18,7 +18,9 @@ void main() {
     // Valid codes and unknown short codes stay as they are.
     expect(completeEan('4015533034770', 64, 259), '4015533034770');
     expect(completeEan('54061057', 519, 100), '54061057');
-    expect(completeEan('', 1, 100), '');
+    expect(completeEan('', 1, 100), storeEan(1, 100));
+    // Check digit cut off.
+    expect(completeEan('842853230047', 851, 165), '8428532300471');
   });
 
   final imported = [
