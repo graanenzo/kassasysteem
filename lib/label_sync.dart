@@ -156,6 +156,12 @@ List<Product> applyLabelTruth(List<Product> imported, List<LabelItem> labels) {
       if (manufacturerCode && !labelEans.contains(p.ean)) out.add(p);
       continue;
     }
+    // A product with a manufacturer barcode is a fixed package, never sold
+    // per kg (the PLU file sometimes has P by mistake, e.g. Chikko 1064).
+    if (p.unit == SaleUnit.kg && p.ean.isNotEmpty && !p.ean.startsWith('2')) {
+      out.add(p.copyWith(unit: SaleUnit.piece));
+      continue;
+    }
     // Per-kg products: the scale label holds a weight, not a price, so a
     // price-based in-store code would be wrong; leave those codes alone.
     if (p.unit == SaleUnit.kg) {

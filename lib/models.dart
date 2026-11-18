@@ -30,11 +30,11 @@ class Product {
     this.fromLabelApp = false,
   });
 
-  Product copyWith({String? ean}) => Product(
+  Product copyWith({String? ean, SaleUnit? unit}) => Product(
         plu: plu,
         name: name,
         description: description,
-        unit: unit,
+        unit: unit ?? this.unit,
         priceCents: priceCents,
         ean: ean ?? this.ean,
         vatPercent: vatPercent,

@@ -25,6 +25,12 @@ void main() {
 
   final imported = [
     const Product(
+        plu: 1064,
+        name: 'Pumkin spice chikko',
+        unit: SaleUnit.kg,
+        priceCents: 759,
+        ean: '8719689079796'),
+    const Product(
         plu: 2, name: 'abrikozen', unit: SaleUnit.kg, priceCents: 1400),
     const Product(
         plu: 63,
@@ -117,5 +123,24 @@ void main() {
     expect(s.byPlu(1099)!.name, 'Nieuw');
     final r = resolveScan(storeEan(1099, 450), s)!;
     expect(r.product.plu, 1099);
+  });
+
+  test('product with a manufacturer barcode is never per kg', () {
+    final r = resolveScan('8719689079796', store)!;
+    expect(r.product.plu, 1064);
+    expect(r.product.unit, SaleUnit.piece);
+  });
+
+  test('crackers tamme kastanje scan by EAN', () {
+    final s = ProductStore()
+      ..setProducts(const [
+        Product(
+            plu: 1038,
+            name: 'crackers tamme kastanje',
+            unit: SaleUnit.piece,
+            priceCents: 429,
+            ean: '3380380037382'),
+      ]);
+    expect(resolveScan('3380380037382', s)!.product.plu, 1038);
   });
 }
