@@ -20,7 +20,7 @@ void main() {
     expect(completeEan('54061057', 519, 100), '54061057');
     expect(completeEan('', 1, 100), storeEan(1, 100));
     // Check digit cut off.
-    expect(completeEan('842853230047', 851, 165), '8428532300471');
+    expect(completeEan('842853230047', 851, 165), '8428532300474');
   });
 
   final imported = [
