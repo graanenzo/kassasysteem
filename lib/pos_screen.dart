@@ -41,7 +41,12 @@ class _PosScreenState extends State<PosScreen> {
   String? _errorRaw;
   Timer? _errorTimer;
   Timer? _labelTimer;
+  Timer? _dayTimer;
   int todayTotal = 0;
+
+  /// Day that [todayTotal] belongs to; the total starts again at 0 when the
+  /// date changes, also when the app stays open overnight.
+  DateTime _totalDay = DateTime.now();
   bool loading = true;
   DateTime _lastScanAt = DateTime.fromMillisecondsSinceEpoch(0);
 
@@ -70,11 +75,26 @@ class _PosScreenState extends State<PosScreen> {
     await store.load();
     settings = await Settings.load();
     todayTotal = await SalesLog.todayTotal();
+    _totalDay = DateTime.now();
     if (mounted) setState(() => loading = false);
+    _dayTimer = Timer.periodic(
+        const Duration(minutes: 1), (_) => _checkNewDay());
     _syncLabels(quiet: true);
     // New packagings in the sticker app show up during the day as well.
     _labelTimer = Timer.periodic(
         const Duration(minutes: 10), (_) => _syncLabels(quiet: true));
+  }
+
+  static bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  /// Resets the day total after midnight.
+  Future<void> _checkNewDay() async {
+    final now = DateTime.now();
+    if (_sameDay(now, _totalDay)) return;
+    _totalDay = now;
+    final fresh = await SalesLog.todayTotal();
+    if (mounted) setState(() => todayTotal = fresh);
   }
 
   bool _syncing = false;
@@ -118,6 +138,7 @@ class _PosScreenState extends State<PosScreen> {
   void dispose() {
     _errorTimer?.cancel();
     _labelTimer?.cancel();
+    _dayTimer?.cancel();
     scanner.dispose();
     input.dispose();
     inputFocus.dispose();
@@ -460,6 +481,10 @@ class _PosScreenState extends State<PosScreen> {
         method: printBon ? 'bon' : 'geen bon',
         lines: lines,
         discountPercent: discountPercent);
+    if (!_sameDay(now, _totalDay)) {
+      _totalDay = now;
+      todayTotal = 0;
+    }
     setState(() {
       cart.clear();
       _staffDiscount = false;
