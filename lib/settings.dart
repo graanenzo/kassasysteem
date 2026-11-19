@@ -77,12 +77,19 @@ class SalesLog {
     required DateTime time,
     required String method,
     required List<CartLine> lines,
+    int discountPercent = 0,
   }) async {
+    final t = saleTotals(lines, discountPercent: discountPercent);
     final entry = {
       'no': receiptNo,
       'time': time.toIso8601String(),
       'method': method,
-      'total': lines.fold<int>(0, (s, l) => s + l.totalCents),
+      'total': t.total,
+      if (t.discount > 0) ...{
+        'subtotal': t.subtotal,
+        'discount': t.discount,
+        'discount_percent': t.discountPercent,
+      },
       'lines': [
         for (final l in lines)
           {

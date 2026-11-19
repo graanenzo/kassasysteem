@@ -34,4 +34,34 @@ void main() {
     }
     expect(bands, 6);
   });
+
+  test('staff discount on receipt and VAT over discounted amount', () {
+    const a = Product(
+        plu: 1, name: 'Granola', unit: SaleUnit.piece, priceCents: 265);
+    const b = Product(
+        plu: 2, name: 'Tas', unit: SaleUnit.piece, priceCents: 1000,
+        vatPercent: 21);
+    final lines = [
+      CartLine(product: a, unitPriceCents: 265),
+      CartLine(product: b, unitPriceCents: 1000),
+    ];
+    final t = saleTotals(lines, discountPercent: 10);
+    expect(t.subtotal, 1265);
+    expect(t.discount, 27 + 100);
+    expect(t.total, 1138);
+    expect(t.byRate, {9: 238, 21: 900});
+
+    final text = String.fromCharCodes(buildEscPosReceipt(
+      settings: Settings(),
+      lines: lines,
+      receiptNo: 2,
+      time: DateTime(2026, 11, 19, 12, 0),
+      discountPercent: 10,
+    ));
+    expect(text, contains('Personeelskorting 10%'));
+    expect(text, contains('-1,27'));
+    expect(text, contains('11,38'));
+
+    expect(saleTotals(lines).discount, 0);
+  });
 }

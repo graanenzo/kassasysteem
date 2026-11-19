@@ -41,11 +41,22 @@ class _PosScreenState extends State<PosScreen> {
   String? _errorRaw;
   Timer? _errorTimer;
   Timer? _labelTimer;
+  Timer? _dayTimer;
   int todayTotal = 0;
+
+  /// Day that [todayTotal] belongs to; the total starts again at 0 when the
+  /// date changes, also when the app stays open overnight.
+  DateTime _totalDay = DateTime.now();
   bool loading = true;
   DateTime _lastScanAt = DateTime.fromMillisecondsSinceEpoch(0);
 
-  int get total => cart.fold(0, (s, l) => s + l.totalCents);
+  /// Staff discount on the whole sale; switched off again after each sale.
+  static const staffDiscountPercent = 10;
+  bool _staffDiscount = false;
+
+  int get _discountPercent => _staffDiscount ? staffDiscountPercent : 0;
+  SaleTotals get totals => saleTotals(cart, discountPercent: _discountPercent);
+  int get total => totals.total;
 
   @override
   void initState() {
@@ -64,11 +75,26 @@ class _PosScreenState extends State<PosScreen> {
     await store.load();
     settings = await Settings.load();
     todayTotal = await SalesLog.todayTotal();
+    _totalDay = DateTime.now();
     if (mounted) setState(() => loading = false);
+    _dayTimer = Timer.periodic(
+        const Duration(minutes: 1), (_) => _checkNewDay());
     _syncLabels(quiet: true);
     // New packagings in the sticker app show up during the day as well.
     _labelTimer = Timer.periodic(
         const Duration(minutes: 10), (_) => _syncLabels(quiet: true));
+  }
+
+  static bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  /// Resets the day total after midnight.
+  Future<void> _checkNewDay() async {
+    final now = DateTime.now();
+    if (_sameDay(now, _totalDay)) return;
+    _totalDay = now;
+    final fresh = await SalesLog.todayTotal();
+    if (mounted) setState(() => todayTotal = fresh);
   }
 
   bool _syncing = false;
@@ -112,6 +138,7 @@ class _PosScreenState extends State<PosScreen> {
   void dispose() {
     _errorTimer?.cancel();
     _labelTimer?.cancel();
+    _dayTimer?.cancel();
     scanner.dispose();
     input.dispose();
     inputFocus.dispose();
@@ -443,14 +470,24 @@ class _PosScreenState extends State<PosScreen> {
     if (cart.isEmpty) return;
     final lines = List<CartLine>.of(cart);
     final sum = total;
+    final discountPercent = _discountPercent;
     final now = DateTime.now();
     final no = settings.nextReceiptNo;
     settings.nextReceiptNo++;
     await settings.save();
     await SalesLog.append(
-        receiptNo: no, time: now, method: printBon ? 'bon' : 'geen bon', lines: lines);
+        receiptNo: no,
+        time: now,
+        method: printBon ? 'bon' : 'geen bon',
+        lines: lines,
+        discountPercent: discountPercent);
+    if (!_sameDay(now, _totalDay)) {
+      _totalDay = now;
+      todayTotal = 0;
+    }
     setState(() {
       cart.clear();
+      _staffDiscount = false;
       todayTotal += sum;
     });
     if (printBon) {
@@ -463,11 +500,16 @@ class _PosScreenState extends State<PosScreen> {
                 lines: lines,
                 receiptNo: no,
                 time: now,
-                logo: await loadLogo()),
+                logo: await loadLogo(),
+                discountPercent: discountPercent),
           );
         } else {
           final pdf = await buildReceipt(
-              settings: settings, lines: lines, receiptNo: no, time: now);
+              settings: settings,
+              lines: lines,
+              receiptNo: no,
+              time: now,
+              discountPercent: discountPercent);
           await printReceipt(pdf, settings);
         }
       } catch (e) {
@@ -998,6 +1040,19 @@ class _PosScreenState extends State<PosScreen> {
         // buttons come back once a product is picked.
         if (!searching) ...[
         const Divider(),
+        if (_staffDiscount && cart.isNotEmpty) ...[
+          Row(children: [
+            const Text('Subtotaal'),
+            const Spacer(),
+            Text(euro(totals.subtotal)),
+          ]),
+          Row(children: [
+            Text('Personeelskorting $staffDiscountPercent%'),
+            const Spacer(),
+            Text(euro(-totals.discount)),
+          ]),
+          const SizedBox(height: 4),
+        ],
         Row(children: [
           Text('Totaal', style: theme.textTheme.headlineSmall),
           const Spacer(),
@@ -1022,6 +1077,18 @@ class _PosScreenState extends State<PosScreen> {
           ),
         ),
         const SizedBox(height: 8),
+        _staffDiscount
+            ? FilledButton.tonalIcon(
+                onPressed: () => setState(() => _staffDiscount = false),
+                icon: const Icon(Icons.check_box),
+                label: Text('Personeelskorting $staffDiscountPercent% (aan)'),
+              )
+            : OutlinedButton.icon(
+                onPressed: () => setState(() => _staffDiscount = true),
+                icon: const Icon(Icons.check_box_outline_blank),
+                label: Text('Personeelskorting $staffDiscountPercent%'),
+              ),
+        const SizedBox(height: 8),
         OutlinedButton.icon(
           onPressed: () => _addOwnProduct(),
           icon: const Icon(Icons.add),
@@ -1029,7 +1096,12 @@ class _PosScreenState extends State<PosScreen> {
         ),
         const SizedBox(height: 8),
         OutlinedButton(
-          onPressed: cart.isEmpty ? null : () => setState(cart.clear),
+          onPressed: cart.isEmpty
+              ? null
+              : () => setState(() {
+                    cart.clear();
+                    _staffDiscount = false;
+                  }),
           child: const Text('Leegmaken'),
         ),
         ],
