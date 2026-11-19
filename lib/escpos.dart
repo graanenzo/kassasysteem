@@ -155,9 +155,10 @@ List<int> buildEscPosReceipt({
   required int receiptNo,
   required DateTime time,
   img.Image? logo,
+  int discountPercent = 0,
 }) {
   final p = EscPosBuilder(settings.receiptWidth);
-  final total = lines.fold<int>(0, (s, l) => s + l.totalCents);
+  final t = saleTotals(lines, discountPercent: discountPercent);
 
   p.align(1);
   if (logo != null) {
@@ -173,21 +174,19 @@ List<int> buildEscPosReceipt({
     p.row('  ${lineDetail(l)}', money(l.totalCents));
   }
   p.divider();
+  if (t.discount > 0) {
+    p.row('Subtotaal', money(t.subtotal));
+    p.row('Personeelskorting ${t.discountPercent}%', money(-t.discount));
+  }
   p.bold(true);
   p.doubleHeight(true);
-  p.row('TOTAAL EUR', money(total));
+  p.row('TOTAAL EUR', money(t.total));
   p.doubleHeight(false);
   p.bold(false);
   p.divider();
 
-  final byRate = <int, int>{};
-  for (final l in lines) {
-    byRate.update(l.product.vatPercent, (v) => v + l.totalCents,
-        ifAbsent: () => l.totalCents);
-  }
-  for (final e in byRate.entries) {
-    p.row('Waarvan btw ${e.key}%',
-        money((e.value * e.key / (100 + e.key)).round()));
+  for (final e in t.vatByRate.entries) {
+    p.row('Waarvan btw ${e.key}%', money(e.value));
   }
   if (settings.footer.trim().isNotEmpty) {
     p.feed(1);

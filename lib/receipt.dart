@@ -28,6 +28,7 @@ Future<Uint8List> buildReceipt({
   required List<CartLine> lines,
   required int receiptNo,
   required DateTime time,
+  int discountPercent = 0,
 }) async {
   // Courier is built in (no internet needed). Built-in PDF fonts cannot
   // print the euro sign, so amounts are shown in EUR without symbol.
@@ -36,14 +37,7 @@ Future<Uint8List> buildReceipt({
   final s = pw.TextStyle(font: font, fontSize: 9);
   final big = pw.TextStyle(font: bold, fontSize: 12);
 
-  final total = lines.fold<int>(0, (sum, l) => sum + l.totalCents);
-
-  // VAT included in prices, grouped per rate.
-  final byRate = <int, int>{};
-  for (final l in lines) {
-    byRate.update(l.product.vatPercent, (v) => v + l.totalCents,
-        ifAbsent: () => l.totalCents);
-  }
+  final t = saleTotals(lines, discountPercent: discountPercent);
 
   pw.Widget row(String left, String right, [pw.TextStyle? style]) => pw.Row(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -77,11 +71,14 @@ Future<Uint8List> buildReceipt({
           row('  ${lineDetail(l)}', money(l.totalCents)),
         ],
         divider(),
-        row('TOTAAL EUR', money(total), big),
+        if (t.discount > 0) ...[
+          row('Subtotaal', money(t.subtotal)),
+          row('Personeelskorting ${t.discountPercent}%', money(-t.discount)),
+        ],
+        row('TOTAAL EUR', money(t.total), big),
         divider(),
-        for (final e in byRate.entries)
-          row('Waarvan btw ${e.key}%',
-              money((e.value * e.key / (100 + e.key)).round())),
+        for (final e in t.vatByRate.entries)
+          row('Waarvan btw ${e.key}%', money(e.value)),
         pw.SizedBox(height: 6),
         if (settings.footer.trim().isNotEmpty)
           pw.Text(settings.footer.trim(),

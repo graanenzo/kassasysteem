@@ -102,3 +102,56 @@ int? parseEuro(String s) {
   if (v == null || v < 0) return null;
   return (v * 100).round();
 }
+
+/// Totals of a sale, with an optional discount (percentage) on everything.
+class SaleTotals {
+  /// Sum of all lines before discount, in cents.
+  final int subtotal;
+
+  /// Discount in cents (0 without discount).
+  final int discount;
+  final int discountPercent;
+
+  /// Amount per VAT rate after discount (VAT included), in cents.
+  final Map<int, int> byRate;
+
+  const SaleTotals({
+    required this.subtotal,
+    required this.discount,
+    required this.discountPercent,
+    required this.byRate,
+  });
+
+  int get total => subtotal - discount;
+
+  /// VAT included in [byRate], per rate.
+  Map<int, int> get vatByRate => {
+        for (final e in byRate.entries)
+          e.key: (e.value * e.key / (100 + e.key)).round()
+      };
+}
+
+/// Computes the totals of [lines]. The discount is worked out per VAT rate,
+/// so the VAT on the receipt is calculated over the discounted amounts.
+SaleTotals saleTotals(List<CartLine> lines, {int discountPercent = 0}) {
+  final gross = <int, int>{};
+  for (final l in lines) {
+    gross.update(l.product.vatPercent, (v) => v + l.totalCents,
+        ifAbsent: () => l.totalCents);
+  }
+  var subtotal = 0;
+  var discount = 0;
+  final byRate = <int, int>{};
+  for (final e in gross.entries) {
+    final d = (e.value * discountPercent / 100).round();
+    subtotal += e.value;
+    discount += d;
+    byRate[e.key] = e.value - d;
+  }
+  return SaleTotals(
+    subtotal: subtotal,
+    discount: discount,
+    discountPercent: discountPercent,
+    byRate: byRate,
+  );
+}
