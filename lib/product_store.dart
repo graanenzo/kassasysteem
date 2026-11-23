@@ -37,7 +37,7 @@ class ProductStore {
   }
 
   void _rebuild() {
-    final merged = applyLabelTruth(_imported, labels);
+    final merged = cloud ?? applyLabelTruth(_imported, labels);
     // Sort by PLU; within a PLU sticker-app products first, so a typed PLU
     // finds the sticker-app product. (List.sort is not stable, hence the
     // index as last key.)
@@ -104,6 +104,16 @@ class ProductStore {
       ];
       labelsFetchedAt = DateTime.tryParse((j['fetched_at'] ?? '') as String);
     }
+    final cloudText = await readText('artikelen.json');
+    if (cloudText != null) {
+      final j = jsonDecode(cloudText) as Map<String, dynamic>;
+      cloud = [
+        for (final p in j['items'] as List)
+          Product.fromJson(p as Map<String, dynamic>).withLabelFlag(
+              (p as Map<String, dynamic>)['sticker'] == true)
+      ];
+      labelsFetchedAt = DateTime.tryParse((j['fetched_at'] ?? '') as String);
+    }
     final customText = await readText('custom_products.json');
     if (customText != null) {
       custom = [
@@ -131,34 +141,95 @@ class ProductStore {
         jsonEncode([for (final c in custom) c.toJson()]));
   }
 
-  /// Fetches the sticker-app prices, applies them and caches them.
-  /// Returns how many products got a different price.
+  /// Products from Supabase (artikelen). When present this is the whole
+  /// list and the PLU file / sticker-app merge is no longer used.
+  List<Product>? cloud;
+
+  /// Fetches the product list from Supabase, uses it and caches it for
+  /// offline use. Products added at this till while offline are sent
+  /// first. Returns how many products got a different price.
   Future<int> syncLabels() async {
-    final fresh = await fetchLabelItems();
-    if (fresh.isEmpty) throw Exception('stickerapp gaf een lege lijst');
+    await _pushPending();
+    final fresh = await fetchArticles();
+    if (fresh.isEmpty) throw Exception('de database gaf een lege lijst');
     final before = <int, Set<int>>{};
     for (final p in products) {
       before.putIfAbsent(p.plu, () => {}).add(p.priceCents);
     }
-    labels = fresh;
+    cloud = fresh;
     labelsFetchedAt = DateTime.now();
     _rebuild();
     await writeText(
-        'label_prices.json',
+        'artikelen.json',
         jsonEncode({
           'fetched_at': labelsFetchedAt!.toIso8601String(),
-          'items': [for (final l in labels) l.toJson()],
+          'items': [for (final p in fresh) p.toJson()..['sticker'] = p.fromLabelApp],
         }));
     var changed = 0;
     for (final p in products) {
-      if (p.fromLabelApp && !(before[p.plu]?.contains(p.priceCents) ?? false)) {
-        changed++;
-      }
+      final b = before[p.plu];
+      if (b != null && !b.contains(p.priceCents)) changed++;
     }
     return changed;
   }
 
+  /// Products added at this till that are not in Supabase yet.
+  Future<void> _pushPending() async {
+    if (custom.isEmpty) return;
+    final left = <Product>[];
+    for (final c in custom) {
+      try {
+        await addArticle(
+            name: c.displayName,
+            priceCents: c.priceCents,
+            ean: c.ean,
+            vatPercent: c.vatPercent,
+            till: 'offline toegevoegd');
+      } catch (_) {
+        left.add(c);
+      }
+    }
+    if (left.length != custom.length) {
+      custom = left;
+      await writeText('custom_products.json',
+          jsonEncode([for (final c in custom) c.toJson()]));
+    }
+  }
+
+  /// Saves a product added at the till in Supabase, so it is known on all
+  /// tills at once. Offline it is kept here and sent at the next sync.
+  /// Returns the product as it is now in the list.
+  Future<Product> addToDatabase(Product p, {required String till}) async {
+    try {
+      final plu = await addArticle(
+          name: p.displayName,
+          priceCents: p.priceCents,
+          ean: p.ean,
+          vatPercent: p.vatPercent,
+          till: till);
+      final saved = Product(
+          plu: plu,
+          name: p.name,
+          description: p.description,
+          unit: p.unit,
+          priceCents: p.priceCents,
+          ean: p.ean,
+          vatPercent: p.vatPercent);
+      cloud = [...?cloud, saved];
+      _rebuild();
+      // Refresh in the background so the other fields come along too.
+      syncLabels().catchError((_) => 0);
+      return saved;
+    } catch (_) {
+      await addCustom(p);
+      return p;
+    }
+  }
+
   int get labelProductCount => products.where((p) => p.fromLabelApp).length;
+
+  /// Number of products in the list from Supabase.
+  int get cloudCount => cloud?.length ?? 0;
 
   /// Replaces the PLU list with an imported one and saves it. Products added
   /// in the app that are also in the imported file (e.g. because an exported

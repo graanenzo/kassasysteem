@@ -173,3 +173,80 @@ List<Product> applyLabelTruth(List<Product> imported, List<LabelItem> labels) {
   }
   return out;
 }
+
+/// The whole product list from Supabase (table artikelen): sticker-app
+/// packagings, bought-in products and products sold per kg. Since
+/// 23-11-2026 this is the till's product list; the PLU file is no longer
+/// imported.
+Future<List<Product>> fetchArticles() async {
+  final res = await http
+      .post(
+        Uri.parse('$_supabaseUrl/rest/v1/rpc/kassa_artikelen'),
+        headers: {
+          'apikey': _publishableKey,
+          'Authorization': 'Bearer $_publishableKey',
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+      )
+      .timeout(const Duration(seconds: 20));
+  if (res.statusCode != 200) {
+    throw Exception('database gaf status ${res.statusCode}');
+  }
+  return [
+    for (final j in jsonDecode(utf8.decode(res.bodyBytes)) as List)
+      articleFromJson(j as Map<String, dynamic>)
+  ];
+}
+
+Product articleFromJson(Map<String, dynamic> j) {
+  final plu = (j['plu'] as num).toInt();
+  final cents = (num.parse(j['prijs'].toString()) * 100).round();
+  final perKg = j['per_kg'] == true;
+  final raw = ((j['barcode'] ?? '') as String).replaceAll(RegExp(r'\D'), '');
+  return Product(
+    plu: plu,
+    name: ((j['naam'] ?? '') as String).trim(),
+    description: ((j['omschrijving'] ?? '') as String).trim(),
+    unit: perKg ? SaleUnit.kg : SaleUnit.piece,
+    priceCents: cents,
+    // Per kg the scale label holds a weight, so no price-based store code.
+    ean: perKg ? raw : completeEan(raw, plu, cents),
+    vatPercent: (j['btw'] as num?)?.toInt() ?? 9,
+    fromLabelApp: j['sticker'] == true,
+  );
+}
+
+/// Adds a product at the till (unknown barcode) to Supabase. Returns its
+/// PLU number.
+Future<int> addArticle({
+  required String name,
+  required int priceCents,
+  required String ean,
+  required int vatPercent,
+  required String till,
+}) async {
+  final res = await http
+      .post(
+        Uri.parse('$_supabaseUrl/rest/v1/rpc/kassa_artikel_toevoegen'),
+        headers: {
+          'apikey': _publishableKey,
+          'Authorization': 'Bearer $_publishableKey',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'p': {
+            'naam': name,
+            'prijs': priceCents / 100,
+            'ean': ean,
+            'btw': vatPercent,
+            'kassa': till,
+          }
+        }),
+      )
+      .timeout(const Duration(seconds: 15));
+  if (res.statusCode != 200) {
+    throw Exception('database gaf status ${res.statusCode}');
+  }
+  return (jsonDecode(res.body) as num).toInt();
+}

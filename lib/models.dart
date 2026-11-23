@@ -41,6 +41,17 @@ class Product {
         fromLabelApp: fromLabelApp,
       );
 
+  Product withLabelFlag(bool fromLabel) => Product(
+        plu: plu,
+        name: name,
+        description: description,
+        unit: unit,
+        priceCents: priceCents,
+        ean: ean,
+        vatPercent: vatPercent,
+        fromLabelApp: fromLabel,
+      );
+
   String get displayName =>
       description.isEmpty ? name : '$name $description';
 
