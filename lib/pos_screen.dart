@@ -8,6 +8,7 @@ import 'package:printing/printing.dart';
 
 import 'barcode_listener.dart';
 import 'escpos.dart';
+import 'invoice_api.dart';
 import 'models.dart';
 import 'numpad.dart';
 import 'onscreen_keyboard.dart';
@@ -28,12 +29,16 @@ class _PaidSale {
   final List<CartLine> lines;
   final int discountPercent;
 
+  /// Set when the sale was given as an invoice (factuur).
+  final String? invoiceNumber;
+
   _PaidSale({
     required this.receiptNo,
     required this.time,
     required this.printed,
     required this.lines,
     required this.discountPercent,
+    this.invoiceNumber,
   });
 
   SaleTotals get totals =>
@@ -83,7 +88,10 @@ class _PosScreenState extends State<PosScreen> {
   /// customer hides it.
   bool _showLastSale = false;
 
-  bool get _canReopen => _lastSale != null && cart.isEmpty;
+  // An invoice has been given out with its own number, so that sale cannot
+  // simply be reopened (it would need a credit invoice).
+  bool get _canReopen =>
+      _lastSale != null && _lastSale!.invoiceNumber == null && cart.isEmpty;
 
   int get _discountPercent => _staffDiscount ? staffDiscountPercent : 0;
   SaleTotals get totals => saleTotals(cart, discountPercent: _discountPercent);
@@ -500,7 +508,7 @@ class _PosScreenState extends State<PosScreen> {
 
   // ---------------------------------------------------------------- checkout
 
-  Future<void> _checkout({required bool printBon}) async {
+  Future<void> _checkout({required bool printBon, InvoiceInfo? invoice}) async {
     if (cart.isEmpty) return;
     final lines = List<CartLine>.of(cart);
     final sum = total;
@@ -512,9 +520,10 @@ class _PosScreenState extends State<PosScreen> {
     await SalesLog.append(
         receiptNo: no,
         time: now,
-        method: printBon ? 'bon' : 'geen bon',
+        method: invoice != null ? 'factuur' : (printBon ? 'bon' : 'geen bon'),
         lines: lines,
-        discountPercent: discountPercent);
+        discountPercent: discountPercent,
+        invoiceNumber: invoice?.number);
     if (!_sameDay(now, _totalDay)) {
       _totalDay = now;
       todayTotal = 0;
@@ -526,7 +535,8 @@ class _PosScreenState extends State<PosScreen> {
           time: now,
           printed: printBon,
           lines: lines,
-          discountPercent: discountPercent);
+          discountPercent: discountPercent,
+          invoiceNumber: invoice?.number);
       _showLastSale = true;
       cart.clear();
       _staffDiscount = false;
@@ -543,7 +553,8 @@ class _PosScreenState extends State<PosScreen> {
                 receiptNo: no,
                 time: now,
                 logo: await loadLogo(),
-                discountPercent: discountPercent),
+                discountPercent: discountPercent,
+                invoice: invoice),
           );
         } else {
           final pdf = await buildReceipt(
@@ -551,19 +562,154 @@ class _PosScreenState extends State<PosScreen> {
               lines: lines,
               receiptNo: no,
               time: now,
-              discountPercent: discountPercent);
+              discountPercent: discountPercent,
+              invoice: invoice);
           await printReceipt(pdf, settings);
         }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Bon printen mislukt: $e'),
+            content: Text(invoice != null
+                ? 'Factuur ${invoice.number} printen mislukt: $e'
+                : 'Bon printen mislukt: $e'),
             backgroundColor: Colors.red.shade700,
           ));
         }
       }
     }
     inputFocus.requestFocus();
+  }
+
+  /// Asks the customer details, gets an invoice number from Supabase and
+  /// prints the sale as an invoice on the receipt printer.
+  Future<void> _invoiceCheckout() async {
+    if (cart.isEmpty) return;
+    final name = TextEditingController();
+    final address = TextEditingController();
+    final vat = TextEditingController();
+    var paid = true;
+    TextEditingController? keys = name;
+    String? error;
+    var busy = false;
+    final info = await showDialog<InvoiceInfo>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setD) {
+        Future<void> submit() async {
+          if (name.text.trim().isEmpty) {
+            setD(() => error = 'Vul de naam van de klant in');
+            return;
+          }
+          setD(() {
+            busy = true;
+            error = null;
+          });
+          try {
+            final number = await createInvoice(
+              lines: List<CartLine>.of(cart),
+              discountPercent: _discountPercent,
+              receiptNo: settings.nextReceiptNo,
+              customerName: name.text.trim(),
+              customerAddress: address.text.trim(),
+              customerVat: vat.text.trim(),
+              paid: paid,
+            );
+            if (ctx.mounted) {
+              Navigator.pop(
+                  ctx,
+                  InvoiceInfo(
+                    number: number,
+                    customerName: name.text.trim(),
+                    customerAddress: address.text.trim(),
+                    customerVat: vat.text.trim(),
+                    paid: paid,
+                  ));
+            }
+          } catch (e) {
+            setD(() {
+              busy = false;
+              error = e.toString().replaceFirst('Exception: ', '');
+            });
+          }
+        }
+
+        Widget field(TextEditingController c, String label,
+                {int lines = 1, String? hint}) =>
+            TextField(
+              controller: c,
+              maxLines: lines,
+              onTap: () => setD(() => keys = c),
+              decoration: InputDecoration(labelText: label, hintText: hint),
+            );
+        return AlertDialog(
+          scrollable: true,
+          title: Text('Factuur (${euro(total)})'),
+          content: SizedBox(
+            width: keys != null ? 640 : 420,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              field(name, 'Naam klant / bedrijf *'),
+              field(address, 'Adres', lines: 2, hint: 'Straat en nummer\nPostcode en plaats'),
+              field(vat, 'Btw-nummer klant (optioneel)'),
+              const SizedBox(height: 12),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: true, label: Text('Betaald'), icon: Icon(Icons.check)),
+                  ButtonSegment(value: false, label: Text('Op rekening'), icon: Icon(Icons.schedule)),
+                ],
+                selected: {paid},
+                onSelectionChanged: (v) => setD(() => paid = v.first),
+              ),
+              if (!paid)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                      'Op de factuur komt: binnen ${settings.paymentDays} dagen '
+                      'overmaken op ${settings.iban}.',
+                      style: Theme.of(ctx).textTheme.bodySmall),
+                ),
+              if (error != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Text(error!,
+                      style: TextStyle(color: Colors.red.shade700)),
+                ),
+              const SizedBox(height: 8),
+              if (keys != null)
+                OnScreenKeyboard(
+                  controller: keys!,
+                  onChanged: () => setD(() {}),
+                  onEnter: () => setD(() => keys = keys == name
+                      ? address
+                      : keys == address
+                          ? vat
+                          : null),
+                  onClose: () => setD(() => keys = null),
+                ),
+            ]),
+          ),
+          actions: [
+            TextButton(
+                onPressed: busy ? null : () => Navigator.pop(ctx),
+                child: const Text('Annuleren')),
+            FilledButton.icon(
+              onPressed: busy ? null : submit,
+              icon: busy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.print),
+              label: const Text('Factuur printen'),
+            ),
+          ],
+        );
+      }),
+    );
+    if (info == null) {
+      inputFocus.requestFocus();
+      return;
+    }
+    await _checkout(printBon: true, invoice: info);
   }
 
   /// Puts the last paid sale back in the cart so it can be corrected and
@@ -680,6 +826,13 @@ class _PosScreenState extends State<PosScreen> {
     final addr = TextEditingController(text: settings.address);
     final foot = TextEditingController(text: settings.footer);
     final ip = TextEditingController(text: settings.printerIp);
+    final invName = TextEditingController(text: settings.invoiceName);
+    final invAddr = TextEditingController(text: settings.invoiceAddress);
+    final invVat = TextEditingController(text: settings.vatNumber);
+    final invKvk = TextEditingController(text: settings.kvkNumber);
+    final invIban = TextEditingController(text: settings.iban);
+    final invDays =
+        TextEditingController(text: settings.paymentDays.toString());
     final width =
         TextEditingController(text: settings.receiptWidth.toString());
     String testStatus = '';
@@ -709,6 +862,46 @@ class _PosScreenState extends State<PosScreen> {
                   controller: foot,
                   decoration:
                       const InputDecoration(labelText: 'Tekst onderaan bon')),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Op de factuur',
+                    style: Theme.of(ctx).textTheme.titleSmall),
+              ),
+              TextField(
+                  controller: invName,
+                  decoration: const InputDecoration(labelText: 'Bedrijfsnaam')),
+              TextField(
+                  controller: invAddr,
+                  maxLines: 2,
+                  decoration: const InputDecoration(labelText: 'Adres')),
+              Row(children: [
+                Expanded(
+                    child: TextField(
+                        controller: invVat,
+                        decoration:
+                            const InputDecoration(labelText: 'Btw-nummer'))),
+                const SizedBox(width: 12),
+                Expanded(
+                    child: TextField(
+                        controller: invKvk,
+                        decoration:
+                            const InputDecoration(labelText: 'KvK-nummer'))),
+              ]),
+              Row(children: [
+                Expanded(
+                    flex: 3,
+                    child: TextField(
+                        controller: invIban,
+                        decoration: const InputDecoration(labelText: 'IBAN'))),
+                const SizedBox(width: 12),
+                Expanded(
+                    child: TextField(
+                        controller: invDays,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                            labelText: 'Betalen binnen (dagen)'))),
+              ]),
               const SizedBox(height: 16),
               Row(children: [
                 Expanded(
@@ -840,7 +1033,13 @@ class _PosScreenState extends State<PosScreen> {
       ..printerUrl = printerUrl
       ..printerName = printerName
       ..printerIp = ip.text.trim()
-      ..receiptWidth = int.tryParse(width.text.trim()) ?? 33;
+      ..receiptWidth = int.tryParse(width.text.trim()) ?? 33
+      ..invoiceName = invName.text.trim()
+      ..invoiceAddress = invAddr.text.trim()
+      ..vatNumber = invVat.text.trim()
+      ..kvkNumber = invKvk.text.trim()
+      ..iban = invIban.text.trim()
+      ..paymentDays = int.tryParse(invDays.text.trim()) ?? 7;
     await settings.save();
     inputFocus.requestFocus();
   }
@@ -1032,7 +1231,7 @@ class _PosScreenState extends State<PosScreen> {
                   children: [
                     Text(
                         'Afgerekend: ${euro(last.totals.total)}'
-                        '  ·  ${last.printed ? 'bon' : 'geen bon'}'
+                        '  ·  ${last.invoiceNumber != null ? 'factuur ${last.invoiceNumber}' : last.printed ? 'bon' : 'geen bon'}'
                         '  ·  nr. ${last.receiptNo}',
                         style: const TextStyle(
                             color: Colors.white,
@@ -1238,6 +1437,15 @@ class _PosScreenState extends State<PosScreen> {
             onPressed: cart.isEmpty ? null : () => _checkout(printBon: false),
             icon: const Icon(Icons.check),
             label: const Text('Geen bon', style: TextStyle(fontSize: 20)),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 48,
+          child: OutlinedButton.icon(
+            onPressed: cart.isEmpty ? null : _invoiceCheckout,
+            icon: const Icon(Icons.description_outlined),
+            label: const Text('Factuur', style: TextStyle(fontSize: 18)),
           ),
         ),
         if (_canReopen) ...[

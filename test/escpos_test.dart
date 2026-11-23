@@ -64,4 +64,39 @@ void main() {
 
     expect(saleTotals(lines).discount, 0);
   });
+
+  test('invoice has number, VAT numbers, VAT per rate and payment text', () {
+    const a = Product(
+        plu: 1, name: 'Granola', unit: SaleUnit.piece, priceCents: 1090);
+    const b = Product(
+        plu: 2,
+        name: 'Handzeep',
+        unit: SaleUnit.piece,
+        priceCents: 1210,
+        vatPercent: 21);
+    final text = String.fromCharCodes(buildEscPosReceipt(
+      settings: Settings(),
+      lines: [
+        CartLine(product: a, unitPriceCents: 1090),
+        CartLine(product: b, unitPriceCents: 1210),
+      ],
+      receiptNo: 12,
+      time: DateTime(2026, 11, 23, 10, 0),
+      invoice: const InvoiceInfo(
+          number: 'K2026-0001',
+          customerName: 'Nursia BV',
+          customerAddress: 'Scheepstimmermanslaan 5-B\n3016 AC Rotterdam',
+          paid: false),
+    ));
+    expect(text, contains('FACTUUR'));
+    expect(text, contains('K2026-0001'));
+    expect(text, contains('NL858035091B01'));
+    expect(text, contains('Nursia BV'));
+    expect(text, contains('Excl. btw 9%'));
+    expect(text, contains('10,00')); // 10,90 incl. 9%
+    expect(text, contains('Btw 21%'));
+    expect(text, contains('2,10')); // 12,10 incl. 21%
+    expect(text, contains('o.v.v.'));
+    expect(text, contains('binnen 7 dagen'));
+  });
 }

@@ -155,3 +155,31 @@ SaleTotals saleTotals(List<CartLine> lines, {int discountPercent = 0}) {
     byRate: byRate,
   );
 }
+
+/// Details printed when a sale is given as an invoice (factuur) on the
+/// receipt printer. The number comes from Supabase, so the laptop and the
+/// iPad never use the same one.
+class InvoiceInfo {
+  final String number;
+  final String customerName;
+  final String customerAddress;
+  final String customerVat;
+
+  /// True when paid at the counter; false when the customer pays by
+  /// bank transfer ("op rekening").
+  final bool paid;
+
+  const InvoiceInfo({
+    required this.number,
+    required this.customerName,
+    this.customerAddress = '',
+    this.customerVat = '',
+    this.paid = true,
+  });
+}
+
+/// Amount excluding VAT per rate, from [SaleTotals.byRate] (VAT included).
+Map<int, int> exVatByRate(SaleTotals t) {
+  final vat = t.vatByRate;
+  return {for (final e in t.byRate.entries) e.key: e.value - (vat[e.key] ?? 0)};
+}
