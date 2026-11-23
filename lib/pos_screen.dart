@@ -32,6 +32,9 @@ class _PaidSale {
   /// Set when the sale was given as an invoice (factuur).
   final String? invoiceNumber;
 
+  /// Set when the sale was sent to the invoice program (customer name).
+  final String? programCustomer;
+
   _PaidSale({
     required this.receiptNo,
     required this.time,
@@ -39,6 +42,7 @@ class _PaidSale {
     required this.lines,
     required this.discountPercent,
     this.invoiceNumber,
+    this.programCustomer,
   });
 
   SaleTotals get totals =>
@@ -91,7 +95,10 @@ class _PosScreenState extends State<PosScreen> {
   // An invoice has been given out with its own number, so that sale cannot
   // simply be reopened (it would need a credit invoice).
   bool get _canReopen =>
-      _lastSale != null && _lastSale!.invoiceNumber == null && cart.isEmpty;
+      _lastSale != null &&
+      _lastSale!.invoiceNumber == null &&
+      _lastSale!.programCustomer == null &&
+      cart.isEmpty;
 
   int get _discountPercent => _staffDiscount ? staffDiscountPercent : 0;
   SaleTotals get totals => saleTotals(cart, discountPercent: _discountPercent);
@@ -508,7 +515,10 @@ class _PosScreenState extends State<PosScreen> {
 
   // ---------------------------------------------------------------- checkout
 
-  Future<void> _checkout({required bool printBon, InvoiceInfo? invoice}) async {
+  Future<void> _checkout(
+      {required bool printBon,
+      InvoiceInfo? invoice,
+      String? programCustomer}) async {
     if (cart.isEmpty) return;
     final lines = List<CartLine>.of(cart);
     final sum = total;
@@ -520,7 +530,11 @@ class _PosScreenState extends State<PosScreen> {
     await SalesLog.append(
         receiptNo: no,
         time: now,
-        method: invoice != null ? 'factuur' : (printBon ? 'bon' : 'geen bon'),
+        method: programCustomer != null
+            ? 'factuurprogramma'
+            : invoice != null
+                ? 'factuur'
+                : (printBon ? 'bon' : 'geen bon'),
         lines: lines,
         discountPercent: discountPercent,
         invoiceNumber: invoice?.number);
@@ -536,7 +550,8 @@ class _PosScreenState extends State<PosScreen> {
           printed: printBon,
           lines: lines,
           discountPercent: discountPercent,
-          invoiceNumber: invoice?.number);
+          invoiceNumber: invoice?.number,
+          programCustomer: programCustomer);
       _showLastSale = true;
       cart.clear();
       _staffDiscount = false;
@@ -643,7 +658,7 @@ class _PosScreenState extends State<PosScreen> {
             );
         return AlertDialog(
           scrollable: true,
-          title: Text('Factuur (${euro(total)})'),
+          title: Text('Bonfactuur (${euro(total)})'),
           content: SizedBox(
             width: keys != null ? 640 : 420,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -710,6 +725,144 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
     await _checkout(printBon: true, invoice: info);
+  }
+
+  /// Sends the sale to the "To do" of the invoice program for an existing
+  /// customer. The invoice gets its number there; nothing is printed here.
+  Future<void> _programCheckout() async {
+    if (cart.isEmpty) return;
+    final messenger = ScaffoldMessenger.of(context);
+    List<InvoiceCustomer> customers;
+    try {
+      customers = await fetchInvoiceCustomers();
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(
+        content: Text('Klanten ophalen mislukt: ${e.toString().replaceFirst('Exception: ', '')}'),
+        backgroundColor: Colors.red.shade700,
+      ));
+      return;
+    }
+    if (!mounted) return;
+    final search = TextEditingController();
+    InvoiceCustomer? chosen;
+    var showKeys = true;
+    var busy = false;
+    String? error;
+    final sent = await showDialog<InvoiceCustomer>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setD) {
+        final q = search.text.trim().toLowerCase();
+        final list = q.isEmpty
+            ? customers
+            : customers
+                .where((c) => '${c.name} ${c.town}'.toLowerCase().contains(q))
+                .toList();
+        Future<void> send() async {
+          final c = chosen;
+          if (c == null) return;
+          setD(() {
+            busy = true;
+            error = null;
+          });
+          try {
+            await sendToInvoiceProgram(
+              customer: c,
+              lines: List<CartLine>.of(cart),
+              discountPercent: _discountPercent,
+              receiptNo: settings.nextReceiptNo,
+            );
+            if (ctx.mounted) Navigator.pop(ctx, c);
+          } catch (e) {
+            setD(() {
+              busy = false;
+              error = e.toString().replaceFirst('Exception: ', '');
+            });
+          }
+        }
+
+        return AlertDialog(
+          title: Text('Naar factuurprogramma (${euro(total)})'),
+          content: SizedBox(
+            width: showKeys ? 640 : 460,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              TextField(
+                controller: search,
+                autofocus: true,
+                onChanged: (_) => setD(() {}),
+                onTap: () => setD(() => showKeys = true),
+                decoration: const InputDecoration(
+                    labelText: 'Zoek klant',
+                    prefixIcon: Icon(Icons.search)),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 240,
+                child: list.isEmpty
+                    ? const Center(
+                        child: Text('Geen klant gevonden. Nieuwe klanten '
+                            'voeg je toe in het factuurprogramma.'))
+                    : ListView.builder(
+                        itemCount: list.length,
+                        itemBuilder: (_, i) {
+                          final c = list[i];
+                          return ListTile(
+                            dense: true,
+                            selected: chosen?.id == c.id,
+                            selectedTileColor:
+                                Theme.of(ctx).colorScheme.primaryContainer,
+                            title: Text(c.name),
+                            subtitle: c.town.isEmpty ? null : Text(c.town),
+                            onTap: () => setD(() => chosen = c),
+                          );
+                        },
+                      ),
+              ),
+              if (error != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(error!,
+                      style: TextStyle(color: Colors.red.shade700)),
+                ),
+              if (showKeys)
+                OnScreenKeyboard(
+                  controller: search,
+                  onChanged: () => setD(() {}),
+                  onEnter: () => setD(() {
+                    if (list.length == 1) chosen = list.first;
+                    showKeys = false;
+                  }),
+                  onClose: () => setD(() => showKeys = false),
+                ),
+            ]),
+          ),
+          actions: [
+            TextButton(
+                onPressed: busy ? null : () => Navigator.pop(ctx),
+                child: const Text('Annuleren')),
+            FilledButton.icon(
+              onPressed: busy || chosen == null ? null : send,
+              icon: busy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.send),
+              label: Text(chosen == null
+                  ? 'Kies een klant'
+                  : 'Versturen naar ${chosen!.name}'),
+            ),
+          ],
+        );
+      }),
+    );
+    if (sent == null) {
+      inputFocus.requestFocus();
+      return;
+    }
+    await _checkout(printBon: false, programCustomer: sent.name);
+    messenger.showSnackBar(SnackBar(
+        content: Text('Staat in To do van het factuurprogramma: ${sent.name}')));
   }
 
   /// Puts the last paid sale back in the cart so it can be corrected and
@@ -1231,7 +1384,7 @@ class _PosScreenState extends State<PosScreen> {
                   children: [
                     Text(
                         'Afgerekend: ${euro(last.totals.total)}'
-                        '  ·  ${last.invoiceNumber != null ? 'factuur ${last.invoiceNumber}' : last.printed ? 'bon' : 'geen bon'}'
+                        '  ·  ${last.programCustomer != null ? 'naar factuurprogramma (${last.programCustomer})' : last.invoiceNumber != null ? 'bonfactuur ${last.invoiceNumber}' : last.printed ? 'bon' : 'geen bon'}'
                         '  ·  nr. ${last.receiptNo}',
                         style: const TextStyle(
                             color: Colors.white,
@@ -1445,7 +1598,18 @@ class _PosScreenState extends State<PosScreen> {
           child: OutlinedButton.icon(
             onPressed: cart.isEmpty ? null : _invoiceCheckout,
             icon: const Icon(Icons.description_outlined),
-            label: const Text('Factuur', style: TextStyle(fontSize: 18)),
+            label: const Text('Bonfactuur printen',
+                style: TextStyle(fontSize: 18)),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 48,
+          child: OutlinedButton.icon(
+            onPressed: cart.isEmpty ? null : _programCheckout,
+            icon: const Icon(Icons.send_outlined),
+            label: const Text('Naar factuurprogramma',
+                style: TextStyle(fontSize: 18)),
           ),
         ),
         if (_canReopen) ...[
