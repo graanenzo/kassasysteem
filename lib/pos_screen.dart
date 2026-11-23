@@ -1168,6 +1168,18 @@ class _PosScreenState extends State<PosScreen> {
           onChanged: _onInputChanged,
           onSubmitted: _onSubmit,
         ),
+        const SizedBox(height: 8),
+        // Direct onder de zoekbalk: een product dat niet gevonden wordt,
+        // voeg je hier met een eigen prijs toe.
+        SizedBox(
+          height: 52,
+          child: FilledButton.tonalIcon(
+            onPressed: () => _addOwnProduct(),
+            icon: const Icon(Icons.add),
+            label: const Text('Eigen product / prijs',
+                style: TextStyle(fontSize: 18)),
+          ),
+        ),
         Expanded(
           child: ListView(children: [
             for (final p in results)
@@ -1249,12 +1261,6 @@ class _PosScreenState extends State<PosScreen> {
                 icon: const Icon(Icons.check_box_outline_blank),
                 label: Text('Personeelskorting $staffDiscountPercent%'),
               ),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: () => _addOwnProduct(),
-          icon: const Icon(Icons.add),
-          label: const Text('Eigen product / prijs'),
-        ),
         const SizedBox(height: 8),
         OutlinedButton(
           onPressed: (cart.isEmpty && paid == null)
