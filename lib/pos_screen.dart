@@ -155,15 +155,15 @@ class _PosScreenState extends State<PosScreen> {
       final changed = await store.syncLabels();
       if (!quiet || changed > 0) {
         messenger.showSnackBar(SnackBar(
-          content: Text('Stickerapp: ${store.labelProductCount} producten, '
+          content: Text('Productlijst: ${store.products.length} producten, '
               '$changed prijs${changed == 1 ? '' : 'zen'} bijgewerkt'),
         ));
       }
     } catch (e) {
       if (!quiet) {
         messenger.showSnackBar(SnackBar(
-          content: Text('Stickerapp niet bereikbaar: $e\n'
-              'De laatst opgehaalde prijzen blijven in gebruik.'),
+          content: Text('Productlijst niet bereikbaar: $e\n'
+              'De laatst opgehaalde lijst blijft in gebruik.'),
           backgroundColor: Colors.red.shade700,
         ));
       }
@@ -174,9 +174,9 @@ class _PosScreenState extends State<PosScreen> {
 
   String get _labelsTooltip {
     final t = store.labelsFetchedAt;
-    if (t == null) return 'Prijzen uit stickerapp ophalen';
+    if (t == null) return 'Productlijst ophalen';
     String two(int n) => n.toString().padLeft(2, '0');
-    return 'Prijzen uit stickerapp ophalen\n'
+    return 'Productlijst ophalen (gebeurt ook elke 10 minuten)\n'
         'Laatst: ${two(t.day)}-${two(t.month)} ${two(t.hour)}:${two(t.minute)}';
   }
 
@@ -384,6 +384,7 @@ class _PosScreenState extends State<PosScreen> {
               TextField(
                 controller: name,
                 autofocus: true,
+                keyboardType: TextInputType.none, // ingebouwd toetsenbord, niet dat van de iPad
                 onTap: () => setD(() => pad = 'name'),
                 decoration: InputDecoration(
                   labelText: 'Naam',
@@ -401,8 +402,8 @@ class _PosScreenState extends State<PosScreen> {
               TextField(
                 controller: price,
                 onTap: () => setD(() => pad = 'price'),
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: TextInputType.none, // ingebouwd toetsenbord, niet dat van de iPad
+
                 decoration: InputDecoration(
                   labelText: 'Prijs',
                   prefixText: '€ ',
@@ -435,7 +436,8 @@ class _PosScreenState extends State<PosScreen> {
                 ),
               TextField(
                 controller: code,
-                keyboardType: TextInputType.number,
+                keyboardType: TextInputType.none, // ingebouwd toetsenbord, niet dat van de iPad
+
                 decoration: const InputDecoration(
                     labelText: 'Barcode (optioneel, je kunt hier scannen)'),
                 onChanged: (v) => setD(() {
@@ -469,8 +471,15 @@ class _PosScreenState extends State<PosScreen> {
       inputFocus.requestFocus();
       return;
     }
-    if (save) await store.addCustom(result);
-    await _addProduct(result);
+    if (save) {
+      // Meteen in de database, zodat hij op alle kassa's bekend is.
+      final saved = await store.addToDatabase(result,
+          till: kIsWeb ? 'iPad (web)' : 'laptop');
+      if (mounted) setState(() {});
+      await _addProduct(saved);
+    } else {
+      await _addProduct(result);
+    }
   }
 
   Future<int?> _askGrams(Product p) async {
@@ -485,7 +494,8 @@ class _PosScreenState extends State<PosScreen> {
           TextField(
             controller: c,
             autofocus: true,
-            keyboardType: TextInputType.number,
+            keyboardType: TextInputType.none, // ingebouwd toetsenbord, niet dat van de iPad
+
             decoration: const InputDecoration(
                 labelText: 'Gewicht', suffixText: 'gram'),
             onSubmitted: (v) => Navigator.pop(ctx, int.tryParse(v.trim())),
@@ -595,6 +605,42 @@ class _PosScreenState extends State<PosScreen> {
     inputFocus.requestFocus();
   }
 
+  /// One "Factuur" button: choose between printing an invoice on the
+  /// receipt printer and sending the sale to the invoice program.
+  Future<void> _invoiceMenu() async {
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text('Factuur (${euro(total)})'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 'print'),
+            child: const ListTile(
+              leading: Icon(Icons.print),
+              title: Text('Bonfactuur printen'),
+              subtitle: Text('Factuur met nummer direct op de bonprinter'),
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 'program'),
+            child: const ListTile(
+              leading: Icon(Icons.send),
+              title: Text('Naar factuurprogramma'),
+              subtitle: Text('Bestaande klant; de factuur komt in To do'),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (choice == 'print') {
+      await _invoiceCheckout();
+    } else if (choice == 'program') {
+      await _programCheckout();
+    } else {
+      inputFocus.requestFocus();
+    }
+  }
+
   /// Asks the customer details, gets an invoice number from Supabase and
   /// prints the sale as an invoice on the receipt printer.
   Future<void> _invoiceCheckout() async {
@@ -653,6 +699,7 @@ class _PosScreenState extends State<PosScreen> {
             TextField(
               controller: c,
               maxLines: lines,
+              keyboardType: TextInputType.none, // ingebouwd toetsenbord, niet dat van de iPad
               onTap: () => setD(() => keys = c),
               decoration: InputDecoration(labelText: label, hintText: hint),
             );
@@ -789,6 +836,7 @@ class _PosScreenState extends State<PosScreen> {
               TextField(
                 controller: search,
                 autofocus: true,
+                keyboardType: TextInputType.none, // ingebouwd toetsenbord, niet dat van de iPad
                 onChanged: (_) => setD(() {}),
                 onTap: () => setD(() => showKeys = true),
                 decoration: const InputDecoration(
@@ -1211,11 +1259,14 @@ class _PosScreenState extends State<PosScreen> {
         actions: [
           Center(child: Text('Vandaag: ${euro(todayTotal)}')),
           const SizedBox(width: 16),
-          TextButton.icon(
-            onPressed: _import,
-            icon: const Icon(Icons.upload_file),
-            label: Text('PLU inlezen (${store.products.length})'),
-          ),
+          if (store.cloud == null)
+            TextButton.icon(
+              onPressed: _import,
+              icon: const Icon(Icons.upload_file),
+              label: Text('PLU inlezen (${store.products.length})'),
+            )
+          else
+            Center(child: Text('${store.products.length} producten')),
           IconButton(
             tooltip: _labelsTooltip,
             onPressed: _syncing ? null : () => _syncLabels(),
@@ -1354,9 +1405,9 @@ class _PosScreenState extends State<PosScreen> {
           const Text('Nog geen producten.'),
           const SizedBox(height: 12),
           FilledButton.icon(
-            onPressed: _import,
-            icon: const Icon(Icons.upload_file),
-            label: const Text('PLU-bestand inlezen'),
+            onPressed: () => _syncLabels(),
+            icon: const Icon(Icons.sync),
+            label: const Text('Productlijst ophalen'),
           ),
         ]),
       );
@@ -1504,6 +1555,7 @@ class _PosScreenState extends State<PosScreen> {
           controller: input,
           focusNode: inputFocus,
           autofocus: true,
+          keyboardType: TextInputType.none, // ingebouwd toetsenbord, niet dat van de iPad
           decoration: InputDecoration(
             labelText: 'PLU-nummer, EAN of zoeken',
             border: const OutlineInputBorder(),
@@ -1596,20 +1648,9 @@ class _PosScreenState extends State<PosScreen> {
         SizedBox(
           height: 48,
           child: OutlinedButton.icon(
-            onPressed: cart.isEmpty ? null : _invoiceCheckout,
+            onPressed: cart.isEmpty ? null : _invoiceMenu,
             icon: const Icon(Icons.description_outlined),
-            label: const Text('Bonfactuur printen',
-                style: TextStyle(fontSize: 18)),
-          ),
-        ),
-        const SizedBox(height: 8),
-        SizedBox(
-          height: 48,
-          child: OutlinedButton.icon(
-            onPressed: cart.isEmpty ? null : _programCheckout,
-            icon: const Icon(Icons.send_outlined),
-            label: const Text('Naar factuurprogramma',
-                style: TextStyle(fontSize: 18)),
+            label: const Text('Factuur', style: TextStyle(fontSize: 18)),
           ),
         ),
         if (_canReopen) ...[

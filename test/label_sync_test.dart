@@ -143,4 +143,28 @@ void main() {
       ]);
     expect(resolveScan('3380380037382', s)!.product.plu, 1038);
   });
+
+  test('articles from Supabase become products', () {
+    final kg = articleFromJson({
+      'plu': 4, 'naam': 'Amandelen bruin drooggeroosterd', 'omschrijving': '',
+      'prijs': 17, 'barcode': '', 'per_kg': true, 'btw': 9, 'sticker': false,
+    });
+    expect(kg.unit, SaleUnit.kg);
+    expect(kg.priceCents, 1700);
+    expect(kg.ean, '');
+    final piece = articleFromJson({
+      'plu': 851, 'naam': 'Ecomil kookroom amandel', 'omschrijving': '',
+      'prijs': '1.65', 'barcode': '842853230047', 'per_kg': false, 'btw': 9,
+      'sticker': false,
+    });
+    expect(piece.unit, SaleUnit.piece);
+    expect(piece.ean, '8428532300474');
+    final label = articleFromJson({
+      'plu': 271, 'naam': 'Granola', 'omschrijving': '500 gram',
+      'prijs': 2.55, 'barcode': '', 'per_kg': false, 'btw': 9, 'sticker': true,
+    });
+    expect(label.fromLabelApp, isTrue);
+    expect(label.ean, storeEan(271, 255));
+    expect(label.displayName, 'Granola 500 gram');
+  });
 }
