@@ -766,6 +766,7 @@ class _PosScreenState extends State<PosScreen> {
               if (keys != null)
                 OnScreenKeyboard(
                   controller: keys!,
+                  autoCapitalize: keys != vat,
                   onChanged: () => setD(() {}),
                   onEnter: () => setD(() => keys = keys == name
                       ? address
