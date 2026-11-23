@@ -17,6 +17,7 @@ import 'plu_import.dart';
 import 'product_store.dart';
 import 'receipt.dart';
 import 'settings.dart';
+import 'sales_sync.dart';
 import 'sounds.dart';
 import 'storage.dart';
 
@@ -35,6 +36,9 @@ class _PaidSale {
   /// Set when the sale was sent to the invoice program (customer name).
   final String? programCustomer;
 
+  /// Id of the sale in the database.
+  final String? saleId;
+
   _PaidSale({
     required this.receiptNo,
     required this.time,
@@ -43,6 +47,7 @@ class _PaidSale {
     required this.discountPercent,
     this.invoiceNumber,
     this.programCustomer,
+    this.saleId,
   });
 
   SaleTotals get totals =>
@@ -123,8 +128,13 @@ class _PosScreenState extends State<PosScreen> {
     todayTotal = await SalesLog.todayTotal();
     _totalDay = DateTime.now();
     if (mounted) setState(() => loading = false);
-    _dayTimer = Timer.periodic(
-        const Duration(minutes: 1), (_) => _checkNewDay());
+    // Elke minuut: nieuwe dag? En verkopen die nog in de wachtrij staan
+    // (bijv. na een internetstoring) alsnog versturen.
+    _dayTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      _checkNewDay();
+      SalesSync.send();
+    });
+    SalesSync.send();
     _syncLabels(quiet: true);
     // New packagings in the sticker app show up during the day as well.
     _labelTimer = Timer.periodic(
@@ -537,6 +547,21 @@ class _PosScreenState extends State<PosScreen> {
     final no = settings.nextReceiptNo;
     settings.nextReceiptNo++;
     await settings.save();
+    final saleId = newSaleId();
+    final method = programCustomer != null
+        ? 'factuurprogramma'
+        : invoice != null
+            ? 'factuur'
+            : (printBon ? 'bon' : 'geen bon');
+    // Naar de database (via een wachtrij, werkt ook offline).
+    SalesSync.add(salePayload(
+        id: saleId,
+        time: now,
+        receiptNo: no,
+        method: method,
+        lines: lines,
+        discountPercent: discountPercent,
+        invoiceNumber: invoice?.number));
     await SalesLog.append(
         receiptNo: no,
         time: now,
@@ -561,7 +586,8 @@ class _PosScreenState extends State<PosScreen> {
           lines: lines,
           discountPercent: discountPercent,
           invoiceNumber: invoice?.number,
-          programCustomer: programCustomer);
+          programCustomer: programCustomer,
+          saleId: saleId);
       _showLastSale = true;
       cart.clear();
       _staffDiscount = false;
@@ -942,6 +968,7 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
     await SalesLog.markReopened(sale.receiptNo);
+    if (sale.saleId != null) SalesSync.reopened(sale.saleId!);
     if (!mounted) return;
     setState(() {
       cart

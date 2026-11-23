@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:kassasysteem/escpos.dart';
 import 'package:kassasysteem/invoice_api.dart';
+import 'package:kassasysteem/sales_sync.dart';
 import 'package:kassasysteem/models.dart';
 import 'package:kassasysteem/settings.dart';
 
@@ -116,5 +117,31 @@ void main() {
     expect(l[1]['unit'], 'kg');
     expect(l[1]['quantity'], 0.25);
     expect(l[1]['unit_price'], 15.5963);
+  });
+
+  test('sale payload for the database', () {
+    const a = Product(
+        plu: 917, name: 'Appelsap', unit: SaleUnit.piece, priceCents: 159,
+        ean: '8718182795226');
+    const b = Product(
+        plu: 4, name: 'Amandelen', unit: SaleUnit.kg, priceCents: 1700);
+    final id = newSaleId();
+    expect(RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$').hasMatch(id), isTrue);
+    final p = salePayload(
+        id: id,
+        time: DateTime(2026, 11, 23, 9),
+        receiptNo: 7,
+        method: 'bon',
+        lines: [
+          CartLine(product: a, unitPriceCents: 159, quantity: 2),
+          CartLine(product: b, unitPriceCents: 265, grams: 156),
+        ],
+        discountPercent: 0);
+    final r = p['regels'] as List;
+    expect(r[0]['aantal'], 2);
+    expect(r[0]['bedrag'], 3.18);
+    expect(r[1]['aantal'], 0.156);
+    expect(r[1]['prijs'], 17.0);
+    expect(p['totaal'], 5.83);
   });
 }
