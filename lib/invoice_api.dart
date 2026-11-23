@@ -85,3 +85,99 @@ Future<String> createInvoice({
   }
   return jsonDecode(utf8.decode(res.bodyBytes)) as String;
 }
+
+/// A customer of the invoice program (only id, name and town are shared
+/// with the till).
+class InvoiceCustomer {
+  final String id;
+  final String name;
+  final String town;
+  const InvoiceCustomer(this.id, this.name, this.town);
+}
+
+Map<String, String> get _headers => {
+      'apikey': _publishableKey,
+      'Authorization': 'Bearer $_publishableKey',
+      'Content-Type': 'application/json',
+    };
+
+Future<http.Response> _rpc(String name, Object body) async {
+  final http.Response res;
+  try {
+    res = await http
+        .post(Uri.parse('$_supabaseUrl/rest/v1/rpc/$name'),
+            headers: _headers, body: jsonEncode(body))
+        .timeout(const Duration(seconds: 15));
+  } catch (_) {
+    throw Exception('Geen verbinding met de database; probeer het opnieuw.');
+  }
+  if (res.statusCode != 200) {
+    var msg = 'status ${res.statusCode}';
+    try {
+      msg = (jsonDecode(utf8.decode(res.bodyBytes)) as Map)['message']?.toString() ?? msg;
+    } catch (_) {}
+    throw Exception(msg);
+  }
+  return res;
+}
+
+/// Customers of the invoice program, for "Naar factuurprogramma".
+Future<List<InvoiceCustomer>> fetchInvoiceCustomers() async {
+  final res = await _rpc('kassa_factuurklanten', {});
+  return [
+    for (final m in jsonDecode(utf8.decode(res.bodyBytes)) as List)
+      InvoiceCustomer(m['id'] as String, (m['naam'] ?? '') as String,
+          (m['plaats'] ?? '') as String)
+  ];
+}
+
+/// Invoice lines as the invoice program wants them: price per unit
+/// excluding VAT, VAT as a fraction (0.09 / 0.21). Weighed products become
+/// kilos with a price per kg.
+List<Map<String, dynamic>> invoiceProgramLines(
+    List<CartLine> lines, int discountPercent) {
+  final f = 1 - discountPercent / 100;
+  double ex(int cents, int vat) =>
+      double.parse((cents / 100 * f / (1 + vat / 100)).toStringAsFixed(4));
+  return [
+    for (final l in lines)
+      if (l.grams != null)
+        {
+          'description': l.product.displayName,
+          'unit': 'kg',
+          'quantity': double.parse((l.grams! * l.quantity / 1000).toStringAsFixed(3)),
+          'unit_price': ex(l.product.priceCents, l.product.vatPercent),
+          'vat_rate': l.product.vatPercent / 100,
+        }
+      else
+        {
+          'description': l.product.displayName,
+          'unit': null,
+          'quantity': l.quantity,
+          'unit_price': ex(l.unitPriceCents, l.product.vatPercent),
+          'vat_rate': l.product.vatPercent / 100,
+        }
+  ];
+}
+
+/// Puts the sale in the "To do" of the invoice program for [customer]. The
+/// invoice gets its number there, when it is made.
+Future<void> sendToInvoiceProgram({
+  required InvoiceCustomer customer,
+  required List<CartLine> lines,
+  required int discountPercent,
+  required int receiptNo,
+  String note = '',
+}) async {
+  final t = saleTotals(lines, discountPercent: discountPercent);
+  await _rpc('kassa_factuur_klaarzetten', {
+    'p': {
+      'customer_id': customer.id,
+      'kassa': kIsWeb ? 'iPad (web)' : 'laptop',
+      'bonnummer': receiptNo,
+      'note': note,
+      'total_incl': t.total / 100,
+      'lines': invoiceProgramLines(lines, discountPercent),
+    }
+  });
+}

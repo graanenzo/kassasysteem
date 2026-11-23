@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:kassasysteem/escpos.dart';
+import 'package:kassasysteem/invoice_api.dart';
 import 'package:kassasysteem/models.dart';
 import 'package:kassasysteem/settings.dart';
 
@@ -98,5 +99,22 @@ void main() {
     expect(text, contains('2,10')); // 12,10 incl. 21%
     expect(text, contains('o.v.v.'));
     expect(text, contains('binnen 7 dagen'));
+  });
+
+  test('lines for the invoice program are excluding VAT', () {
+    const a = Product(
+        plu: 1, name: 'Granola', unit: SaleUnit.piece, priceCents: 1090);
+    const b = Product(
+        plu: 4, name: 'Amandelen', unit: SaleUnit.kg, priceCents: 1700);
+    final l = invoiceProgramLines([
+      CartLine(product: a, unitPriceCents: 1090, quantity: 2),
+      CartLine(product: b, unitPriceCents: 425, grams: 250),
+    ], 0);
+    expect(l[0]['quantity'], 2);
+    expect(l[0]['unit_price'], 10.0);
+    expect(l[0]['vat_rate'], 0.09);
+    expect(l[1]['unit'], 'kg');
+    expect(l[1]['quantity'], 0.25);
+    expect(l[1]['unit_price'], 15.5963);
   });
 }
