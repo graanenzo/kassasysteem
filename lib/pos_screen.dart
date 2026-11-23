@@ -19,6 +19,27 @@ import 'settings.dart';
 import 'sounds.dart';
 import 'storage.dart';
 
+/// The last paid sale, kept so it stays on screen after "Bon" / "Geen bon"
+/// and can be reopened.
+class _PaidSale {
+  final int receiptNo;
+  final DateTime time;
+  final bool printed;
+  final List<CartLine> lines;
+  final int discountPercent;
+
+  _PaidSale({
+    required this.receiptNo,
+    required this.time,
+    required this.printed,
+    required this.lines,
+    required this.discountPercent,
+  });
+
+  SaleTotals get totals =>
+      saleTotals(lines, discountPercent: discountPercent);
+}
+
 class PosScreen extends StatefulWidget {
   const PosScreen({super.key});
 
@@ -53,6 +74,16 @@ class _PosScreenState extends State<PosScreen> {
   /// Staff discount on the whole sale; switched off again after each sale.
   static const staffDiscountPercent = 10;
   bool _staffDiscount = false;
+
+  /// Last paid sale; can be reopened as long as no new customer has a
+  /// product in the cart.
+  _PaidSale? _lastSale;
+
+  /// Whether [_lastSale] is still shown. Adding a product for the next
+  /// customer hides it.
+  bool _showLastSale = false;
+
+  bool get _canReopen => _lastSale != null && cart.isEmpty;
 
   int get _discountPercent => _staffDiscount ? staffDiscountPercent : 0;
   SaleTotals get totals => saleTotals(cart, discountPercent: _discountPercent);
@@ -280,12 +311,15 @@ class _PosScreenState extends State<PosScreen> {
         if (grams == null) return;
         lineTotal = (p.priceCents * grams / 1000).round();
       }
-      setState(() => cart.add(
-          CartLine(product: p, unitPriceCents: lineTotal, grams: grams)));
+      setState(() {
+        _showLastSale = false; // the next customer starts
+        cart.add(CartLine(product: p, unitPriceCents: lineTotal, grams: grams));
+      });
     } else {
       // A sticker with a price in the barcode: the price on the sticker counts.
       final price = embeddedPriceCents ?? p.priceCents;
       setState(() {
+        _showLastSale = false; // the next customer starts
         final i = cart.indexWhere((l) =>
             l.product.plu == p.plu &&
             l.grams == null &&
@@ -486,6 +520,14 @@ class _PosScreenState extends State<PosScreen> {
       todayTotal = 0;
     }
     setState(() {
+      // The paid sale stays on screen until the next product is scanned.
+      _lastSale = _PaidSale(
+          receiptNo: no,
+          time: now,
+          printed: printBon,
+          lines: lines,
+          discountPercent: discountPercent);
+      _showLastSale = true;
       cart.clear();
       _staffDiscount = false;
       todayTotal += sum;
@@ -521,6 +563,50 @@ class _PosScreenState extends State<PosScreen> {
         }
       }
     }
+    inputFocus.requestFocus();
+  }
+
+  /// Puts the last paid sale back in the cart so it can be corrected and
+  /// paid again. The old sale no longer counts in the day total.
+  Future<void> _reopenLastSale() async {
+    final sale = _lastSale;
+    if (sale == null || cart.isNotEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Vorige klant heropenen?'),
+        content: Text('Bon ${sale.receiptNo} (${euro(sale.totals.total)}) '
+            'komt terug in de kassa en telt niet meer mee in de dagomzet. '
+            'Reken daarna opnieuw af met "Bon" of "Geen bon".'
+            '${sale.printed ? '\n\nDe al geprinte bon is dan niet meer '
+                'geldig.' : ''}'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuleren')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Heropenen')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted || cart.isNotEmpty) {
+      inputFocus.requestFocus();
+      return;
+    }
+    await SalesLog.markReopened(sale.receiptNo);
+    if (!mounted) return;
+    setState(() {
+      cart
+        ..clear()
+        ..addAll(sale.lines);
+      _staffDiscount = sale.discountPercent > 0;
+      if (_sameDay(sale.time, _totalDay)) {
+        todayTotal -= sale.totals.total;
+      }
+      _lastSale = null;
+      _showLastSale = false;
+    });
     inputFocus.requestFocus();
   }
 
@@ -923,6 +1009,68 @@ class _PosScreenState extends State<PosScreen> {
         ]),
       );
     }
+    final last = _lastSale;
+    if (cart.isEmpty && _showLastSale && last != null) {
+      return Container(
+        margin: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xE6FFFFFF),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Container(
+            color: Colors.green.shade700,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            child: Row(children: [
+              const Icon(Icons.check_circle, color: Colors.white, size: 32),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                        'Afgerekend: ${euro(last.totals.total)}'
+                        '  ·  ${last.printed ? 'bon' : 'geen bon'}'
+                        '  ·  nr. ${last.receiptNo}',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold)),
+                    const Text('Scan een product voor de volgende klant',
+                        style: TextStyle(color: Colors.white, fontSize: 15)),
+                  ],
+                ),
+              ),
+            ]),
+          ),
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.all(8),
+              itemCount: last.lines.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (_, i) {
+                final l = last.lines[i];
+                return ListTile(
+                  title: Text(l.product.displayName),
+                  subtitle: Text('PLU ${l.product.plu}  ·  ${lineDetail(l)}'),
+                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text('${l.quantity}×'),
+                    SizedBox(
+                      width: 90,
+                      child: Text(euro(l.totalCents),
+                          textAlign: TextAlign.right,
+                          style: theme.textTheme.titleMedium),
+                    ),
+                  ]),
+                );
+              },
+            ),
+          ),
+        ]),
+      );
+    }
     if (cart.isEmpty) {
       return Center(
         child: Container(
@@ -994,6 +1142,9 @@ class _PosScreenState extends State<PosScreen> {
 
   Widget _sidePanel(ThemeData theme) {
     final searching = _showKeyboard || results.isNotEmpty;
+    // Right after paying, the paid sale's amounts stay visible.
+    final paid = (cart.isEmpty && _showLastSale) ? _lastSale : null;
+    final shown = paid?.totals ?? totals;
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -1040,23 +1191,24 @@ class _PosScreenState extends State<PosScreen> {
         // buttons come back once a product is picked.
         if (!searching) ...[
         const Divider(),
-        if (_staffDiscount && cart.isNotEmpty) ...[
+        if (shown.discount > 0) ...[
           Row(children: [
             const Text('Subtotaal'),
             const Spacer(),
-            Text(euro(totals.subtotal)),
+            Text(euro(shown.subtotal)),
           ]),
           Row(children: [
-            Text('Personeelskorting $staffDiscountPercent%'),
+            Text('Personeelskorting ${shown.discountPercent}%'),
             const Spacer(),
-            Text(euro(-totals.discount)),
+            Text(euro(-shown.discount)),
           ]),
           const SizedBox(height: 4),
         ],
         Row(children: [
-          Text('Totaal', style: theme.textTheme.headlineSmall),
+          Text(paid != null ? 'Betaald' : 'Totaal',
+              style: theme.textTheme.headlineSmall),
           const Spacer(),
-          Text(euro(total), style: theme.textTheme.headlineMedium),
+          Text(euro(shown.total), style: theme.textTheme.headlineMedium),
         ]),
         const SizedBox(height: 16),
         SizedBox(
@@ -1076,6 +1228,15 @@ class _PosScreenState extends State<PosScreen> {
             label: const Text('Geen bon', style: TextStyle(fontSize: 20)),
           ),
         ),
+        if (_canReopen) ...[
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _reopenLastSale,
+            icon: const Icon(Icons.undo),
+            label: Text('Vorige klant heropenen '
+                '(${euro(_lastSale!.totals.total)})'),
+          ),
+        ],
         const SizedBox(height: 8),
         _staffDiscount
             ? FilledButton.tonalIcon(
@@ -1096,11 +1257,12 @@ class _PosScreenState extends State<PosScreen> {
         ),
         const SizedBox(height: 8),
         OutlinedButton(
-          onPressed: cart.isEmpty
+          onPressed: (cart.isEmpty && paid == null)
               ? null
               : () => setState(() {
                     cart.clear();
                     _staffDiscount = false;
+                    _showLastSale = false;
                   }),
           child: const Text('Leegmaken'),
         ),
