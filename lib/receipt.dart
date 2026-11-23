@@ -11,6 +11,7 @@ import 'models.dart';
 import 'settings.dart';
 
 String _two(int n) => n.toString().padLeft(2, '0');
+String formatDate(DateTime t) => '${_two(t.day)}-${_two(t.month)}-${t.year}';
 String formatDateTime(DateTime t) =>
     '${_two(t.day)}-${_two(t.month)}-${t.year} ${_two(t.hour)}:${_two(t.minute)}';
 
@@ -29,6 +30,7 @@ Future<Uint8List> buildReceipt({
   required int receiptNo,
   required DateTime time,
   int discountPercent = 0,
+  InvoiceInfo? invoice,
 }) async {
   // Courier is built in (no internet needed). Built-in PDF fonts cannot
   // print the euro sign, so amounts are shown in EUR without symbol.
@@ -58,27 +60,71 @@ Future<Uint8List> buildReceipt({
     build: (ctx) => pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
       children: [
-        pw.Text(settings.shopName,
-            style: big, textAlign: pw.TextAlign.center),
-        if (settings.address.trim().isNotEmpty)
-          pw.Text(settings.address.trim(),
-              style: s, textAlign: pw.TextAlign.center),
-        pw.SizedBox(height: 4),
-        row('Bon $receiptNo', formatDateTime(time)),
+        if (invoice != null) ...[
+          pw.Text('FACTUUR', style: big, textAlign: pw.TextAlign.center),
+          divider(),
+          pw.Text(settings.invoiceName.trim(), style: s),
+          if (settings.invoiceAddress.trim().isNotEmpty)
+            pw.Text(settings.invoiceAddress.trim(), style: s),
+          if (settings.vatNumber.trim().isNotEmpty)
+            row('BTW', settings.vatNumber.trim()),
+          if (settings.kvkNumber.trim().isNotEmpty)
+            row('KVK', settings.kvkNumber.trim()),
+          if (settings.iban.trim().isNotEmpty) row('Bank', settings.iban.trim()),
+          divider(),
+          row('Factuurnummer', invoice.number, pw.TextStyle(font: bold, fontSize: 9)),
+          row('Factuurdatum', formatDate(time)),
+          row('Leverdatum', formatDate(time)),
+          row('Bon', '$receiptNo'),
+          divider(),
+          pw.Text('Aan:', style: pw.TextStyle(font: bold, fontSize: 9)),
+          pw.Text(invoice.customerName.trim(), style: s),
+          if (invoice.customerAddress.trim().isNotEmpty)
+            pw.Text(invoice.customerAddress.trim(), style: s),
+          if (invoice.customerVat.trim().isNotEmpty)
+            row('BTW', invoice.customerVat.trim()),
+        ] else ...[
+          pw.Text(settings.shopName,
+              style: big, textAlign: pw.TextAlign.center),
+          if (settings.address.trim().isNotEmpty)
+            pw.Text(settings.address.trim(),
+                style: s, textAlign: pw.TextAlign.center),
+          pw.SizedBox(height: 4),
+          row('Bon $receiptNo', formatDateTime(time)),
+        ],
         divider(),
         for (final l in lines) ...[
           pw.Text(l.product.displayName, style: s),
-          row('  ${lineDetail(l)}', money(l.totalCents)),
+          row(invoice != null
+                  ? '  ${lineDetail(l)} (${l.product.vatPercent}%)'
+                  : '  ${lineDetail(l)}',
+              money(l.totalCents)),
         ],
         divider(),
         if (t.discount > 0) ...[
           row('Subtotaal', money(t.subtotal)),
           row('Personeelskorting ${t.discountPercent}%', money(-t.discount)),
         ],
+        if (invoice != null) ...[
+          for (final r in (t.byRate.keys.toList()..sort()))
+            row('Excl. btw $r%', money(exVatByRate(t)[r]!)),
+          for (final r in (t.byRate.keys.toList()..sort()))
+            row('Btw $r%', money(t.vatByRate[r]!)),
+        ],
         row('TOTAAL EUR', money(t.total), big),
         divider(),
-        for (final e in t.vatByRate.entries)
-          row('Waarvan btw ${e.key}%', money(e.value)),
+        if (invoice == null)
+          for (final e in t.vatByRate.entries)
+            row('Waarvan btw ${e.key}%', money(e.value))
+        else if (invoice.paid)
+          pw.Text('Voldaan op ${formatDate(time)}.', style: s)
+        else
+          pw.Text(
+              'Wij verzoeken u het bedrag van EUR ${money(t.total)} binnen '
+              '${settings.paymentDays} dagen over te maken op '
+              '${settings.iban.trim()} t.n.v. ${settings.invoiceName.trim()}, '
+              'o.v.v. ${invoice.number}.',
+              style: s),
         pw.SizedBox(height: 6),
         if (settings.footer.trim().isNotEmpty)
           pw.Text(settings.footer.trim(),

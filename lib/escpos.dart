@@ -10,7 +10,7 @@ import 'package:image/image.dart' as img;
 
 import 'models.dart';
 import 'storage.dart';
-import 'receipt.dart' show formatDateTime, lineDetail;
+import 'receipt.dart' show formatDate, formatDateTime, lineDetail;
 import 'settings.dart';
 
 export 'printer_transport.dart' show sendToNetworkPrinter;
@@ -156,6 +156,7 @@ List<int> buildEscPosReceipt({
   required DateTime time,
   img.Image? logo,
   int discountPercent = 0,
+  InvoiceInfo? invoice,
 }) {
   final p = EscPosBuilder(settings.receiptWidth);
   final t = saleTotals(lines, discountPercent: discountPercent);
@@ -165,18 +166,68 @@ List<int> buildEscPosReceipt({
     p.image(logo);
     p.feed(1); // space between logo and date
   }
-  if (settings.address.trim().isNotEmpty) p.text(settings.address.trim());
-  p.text(formatDateTime(time));
-  p.align(0);
+  if (invoice != null) {
+    p.bold(true);
+    p.doubleHeight(true);
+    p.text('FACTUUR');
+    p.doubleHeight(false);
+    p.bold(false);
+    p.align(0);
+    p.divider();
+    p.text(settings.invoiceName.trim());
+    if (settings.invoiceAddress.trim().isNotEmpty) {
+      p.text(settings.invoiceAddress.trim());
+    }
+    if (settings.vatNumber.trim().isNotEmpty) p.row('BTW', settings.vatNumber.trim());
+    if (settings.kvkNumber.trim().isNotEmpty) p.row('KVK', settings.kvkNumber.trim());
+    if (settings.iban.trim().isNotEmpty) p.row('Bank', settings.iban.trim());
+    p.divider();
+    p.bold(true);
+    p.row('Factuurnummer', invoice.number);
+    p.bold(false);
+    p.row('Factuurdatum', formatDate(time));
+    p.row('Leverdatum', formatDate(time));
+    p.row('Bon', '$receiptNo');
+    p.divider();
+    p.bold(true);
+    p.text('Aan:');
+    p.bold(false);
+    p.text(invoice.customerName.trim());
+    if (invoice.customerAddress.trim().isNotEmpty) {
+      p.text(invoice.customerAddress.trim());
+    }
+    if (invoice.customerVat.trim().isNotEmpty) {
+      p.row('BTW', invoice.customerVat.trim());
+    }
+  } else {
+    if (settings.address.trim().isNotEmpty) p.text(settings.address.trim());
+    p.text(formatDateTime(time));
+    p.align(0);
+  }
   p.divider();
   for (final l in lines) {
     p.text(l.product.displayName);
-    p.row('  ${lineDetail(l)}', money(l.totalCents));
+    final detail = invoice != null
+        ? '  ${lineDetail(l)} (${l.product.vatPercent}%)'
+        : '  ${lineDetail(l)}';
+    p.row(detail, money(l.totalCents));
   }
   p.divider();
   if (t.discount > 0) {
     p.row('Subtotaal', money(t.subtotal));
     p.row('Personeelskorting ${t.discountPercent}%', money(-t.discount));
+  }
+  if (invoice != null) {
+    // A full invoice shows the amount excluding VAT and the VAT per rate.
+    final ex = exVatByRate(t);
+    final vat = t.vatByRate;
+    final rates = t.byRate.keys.toList()..sort();
+    for (final r in rates) {
+      p.row('Excl. btw $r%', money(ex[r]!));
+    }
+    for (final r in rates) {
+      p.row('Btw $r%', money(vat[r]!));
+    }
   }
   p.bold(true);
   p.doubleHeight(true);
@@ -185,8 +236,17 @@ List<int> buildEscPosReceipt({
   p.bold(false);
   p.divider();
 
-  for (final e in t.vatByRate.entries) {
-    p.row('Waarvan btw ${e.key}%', money(e.value));
+  if (invoice == null) {
+    for (final e in t.vatByRate.entries) {
+      p.row('Waarvan btw ${e.key}%', money(e.value));
+    }
+  } else if (invoice.paid) {
+    p.text('Voldaan op ${formatDate(time)}.');
+  } else {
+    p.text('Wij verzoeken u het bedrag van EUR ${money(t.total)} binnen '
+        '${settings.paymentDays} dagen over te maken op '
+        '${settings.iban.trim()} t.n.v. ${settings.invoiceName.trim()}, '
+        'o.v.v. ${invoice.number}.');
   }
   if (settings.footer.trim().isNotEmpty) {
     p.feed(1);

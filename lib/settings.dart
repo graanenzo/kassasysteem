@@ -24,6 +24,14 @@ class Settings {
   int receiptWidth;
   int nextReceiptNo;
 
+  // Printed on an invoice (factuur) from the receipt printer.
+  String invoiceName;
+  String invoiceAddress;
+  String vatNumber;
+  String kvkNumber;
+  String iban;
+  int paymentDays;
+
   Settings({
     this.shopName = 'Mijn Winkel',
     this.address = '',
@@ -33,6 +41,12 @@ class Settings {
     this.printerIp = defaultPrinterIp,
     this.receiptWidth = 33,
     this.nextReceiptNo = 1,
+    this.invoiceName = 'Graan & Zo B.V.',
+    this.invoiceAddress = 'Oosteinde 7\n2969 AS Oud-Alblas',
+    this.vatNumber = 'NL858035091B01',
+    this.kvkNumber = '69843090',
+    this.iban = 'NL83RABO0324067704',
+    this.paymentDays = 7,
   });
 
   Map<String, dynamic> toJson() => {
@@ -44,6 +58,12 @@ class Settings {
         'printerIp': printerIp,
         'receiptWidth': receiptWidth,
         'nextReceiptNo': nextReceiptNo,
+        'invoiceName': invoiceName,
+        'invoiceAddress': invoiceAddress,
+        'vatNumber': vatNumber,
+        'kvkNumber': kvkNumber,
+        'iban': iban,
+        'paymentDays': paymentDays,
       };
 
   factory Settings.fromJson(Map<String, dynamic> j) => Settings(
@@ -57,6 +77,13 @@ class Settings {
             : defaultPrinterIp,
         receiptWidth: (j['receiptWidth'] ?? 33) as int,
         nextReceiptNo: (j['nextReceiptNo'] ?? 1) as int,
+        invoiceName: (j['invoiceName'] ?? 'Graan & Zo B.V.') as String,
+        invoiceAddress:
+            (j['invoiceAddress'] ?? 'Oosteinde 7\n2969 AS Oud-Alblas') as String,
+        vatNumber: (j['vatNumber'] ?? 'NL858035091B01') as String,
+        kvkNumber: (j['kvkNumber'] ?? '69843090') as String,
+        iban: (j['iban'] ?? 'NL83RABO0324067704') as String,
+        paymentDays: (j['paymentDays'] ?? 7) as int,
       );
 
   static Future<Settings> load() async {
@@ -78,12 +105,14 @@ class SalesLog {
     required String method,
     required List<CartLine> lines,
     int discountPercent = 0,
+    String? invoiceNumber,
   }) async {
     final t = saleTotals(lines, discountPercent: discountPercent);
     final entry = {
       'no': receiptNo,
       'time': time.toIso8601String(),
       'method': method,
+      if (invoiceNumber != null) 'invoice': invoiceNumber,
       'total': t.total,
       if (t.discount > 0) ...{
         'subtotal': t.subtotal,
