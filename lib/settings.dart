@@ -104,6 +104,28 @@ class SalesLog {
     await appendText('sales.jsonl', '${jsonEncode(entry)}\n');
   }
 
+  /// Marks the sale with [receiptNo] as reopened: it stays in the log for
+  /// reference but no longer counts. The corrected sale is logged again
+  /// with a new receipt number when it is paid.
+  static Future<void> markReopened(int receiptNo) async {
+    final text = await readText('sales.jsonl');
+    if (text == null) return;
+    final lines = const LineSplitter().convert(text);
+    // The most recent entry with this number is the one to reopen.
+    for (var i = lines.length - 1; i >= 0; i--) {
+      if (lines[i].trim().isEmpty) continue;
+      final j = jsonDecode(lines[i]) as Map<String, dynamic>;
+      if (j['no'] == receiptNo && j['reopened'] != true) {
+        j['reopened'] = true;
+        j['reopened_at'] = DateTime.now().toIso8601String();
+        lines[i] = jsonEncode(j);
+        break;
+      }
+    }
+    await writeText('sales.jsonl',
+        lines.where((l) => l.trim().isNotEmpty).map((l) => '$l\n').join());
+  }
+
   static Future<int> todayTotal() async {
     final text = await readText('sales.jsonl');
     if (text == null) return 0;
@@ -112,6 +134,7 @@ class SalesLog {
     for (final line in const LineSplitter().convert(text)) {
       if (line.trim().isEmpty) continue;
       final j = jsonDecode(line) as Map<String, dynamic>;
+      if (j['reopened'] == true) continue;
       final t = DateTime.parse(j['time'] as String);
       if (t.year == now.year && t.month == now.month && t.day == now.day) {
         sum += j['total'] as int;
