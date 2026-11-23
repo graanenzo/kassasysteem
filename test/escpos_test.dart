@@ -96,6 +96,7 @@ void main() {
     expect(text, contains('10,00')); // 10,90 incl. 9%
     expect(text, contains('Btw 21%'));
     expect(text, contains('2,10')); // 12,10 incl. 21%
-    expect(text, contains('o.v.v. K2026-0001'));
+    expect(text, contains('o.v.v.'));
+    expect(text, contains('binnen 7 dagen'));
   });
 }
