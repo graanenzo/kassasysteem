@@ -644,14 +644,14 @@ class _PosScreenState extends State<PosScreen> {
             child: const ListTile(
               leading: Icon(Icons.print),
               title: Text('Bonfactuur printen'),
-              subtitle: Text('Factuur met nummer direct op de bonprinter'),
+              subtitle: Text('Klant betaalt nu; factuur met nummer direct op de bonprinter'),
             ),
           ),
           SimpleDialogOption(
             onPressed: () => Navigator.pop(ctx, 'program'),
             child: const ListTile(
               leading: Icon(Icons.send),
-              title: Text('Naar factuurprogramma'),
+              title: Text('Op rekening: naar factuurprogramma'),
               subtitle: Text('Bestaande klant; de factuur komt in To do'),
             ),
           ),
@@ -674,7 +674,9 @@ class _PosScreenState extends State<PosScreen> {
     final name = TextEditingController();
     final address = TextEditingController();
     final vat = TextEditingController();
-    var paid = true;
+    // Een bonfactuur wordt altijd direct betaald. Op rekening gaat via het factuurprogramma.
+    const paid = true;
+    var toProgram = false;
     TextEditingController? keys = name;
     String? error;
     var busy = false;
@@ -739,22 +741,21 @@ class _PosScreenState extends State<PosScreen> {
               field(address, 'Adres', lines: 2, hint: 'Straat en nummer\nPostcode en plaats'),
               field(vat, 'Btw-nummer klant (optioneel)'),
               const SizedBox(height: 12),
-              SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(value: true, label: Text('Betaald'), icon: Icon(Icons.check)),
-                  ButtonSegment(value: false, label: Text('Op rekening'), icon: Icon(Icons.schedule)),
-                ],
-                selected: {paid},
-                onSelectionChanged: (v) => setD(() => paid = v.first),
-              ),
-              if (!paid)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(
-                      'Op de factuur komt: binnen ${settings.paymentDays} dagen '
-                      'overmaken op ${settings.iban}.',
-                      style: Theme.of(ctx).textTheme.bodySmall),
+              Row(children: [
+                const Icon(Icons.check_circle_outline, size: 18),
+                const SizedBox(width: 6),
+                const Expanded(child: Text('De klant betaalt nu (pin of contant).')),
+                TextButton.icon(
+                  onPressed: busy
+                      ? null
+                      : () {
+                          toProgram = true;
+                          Navigator.pop(ctx);
+                        },
+                  icon: const Icon(Icons.send, size: 18),
+                  label: const Text('Op rekening? Naar factuurprogramma'),
                 ),
+              ]),
               if (error != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 10),
@@ -794,7 +795,11 @@ class _PosScreenState extends State<PosScreen> {
       }),
     );
     if (info == null) {
-      inputFocus.requestFocus();
+      if (toProgram) {
+        await _programCheckout();
+      } else {
+        inputFocus.requestFocus();
+      }
       return;
     }
     await _checkout(printBon: true, invoice: info);
