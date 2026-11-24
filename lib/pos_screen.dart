@@ -929,7 +929,7 @@ class _PosScreenState extends State<PosScreen> {
                   : const Icon(Icons.send),
               label: Text(chosen == null
                   ? 'Kies een klant'
-                  : 'Versturen naar ${chosen!.name}'),
+                  : 'Verstuur naar factuurprogramma'),
             ),
           ],
         );
